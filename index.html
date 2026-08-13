@@ -601,9 +601,10 @@ function crest(id,cls){
 const ksaTime=i=>new Date(i).toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:CFG.TZ});
 const ksaDate=i=>new Date(i).toLocaleDateString('ar-SA',{weekday:'long',day:'numeric',month:'long',timeZone:CFG.TZ});
 const isLocked=i=>Date.now()>(new Date(i).getTime()-CFG.LOCK_MIN*60000);
-/* خادم الرابطة لا يحدّث finished إطلاقاً، لذا نحكم بالوقت:
-   مباراة مضى على انطلاقها أكثر من ساعتين و10 دقائق تُعتبر منتهية */
-const ENDED_MS=130*60000;
+/* خادم الرابطة قد لا يرفع علم finished مطلقاً، لكنه قد يكتب النتيجة.
+   لذلك نعتمد النتيجة متى وُجدت ومضى على الانطلاق ساعتان ونصف،
+   ونعتبر المباراة منتهية زمنياً حتى لو بقيت النتيجة فارغة. */
+const ENDED_MS=150*60000;   // ساعتان ونصف من الصافرة الأولى
 const hasEnded=f=>!!f.finished || Date.now() > new Date(f.kickoff).getTime()+ENDED_MS;
 function countdown(iso){let d=new Date(iso).getTime()-Date.now(); if(d<=0)return 'بدأت';
   const day=Math.floor(d/864e5);d-=day*864e5;const h=Math.floor(d/36e5);d-=h*36e5;const m=Math.floor(d/6e4);
@@ -657,12 +658,25 @@ function mapFixtures(raw){
   S.fixtures=raw.map(f=>({id:f.id,round:f.event,kickoff:f.kickoff_time,
     provisional:!!f.provisional_start_time,home:f.team_h,away:f.team_a,
     hs:f.team_h_score,as:f.team_a_score,started:!!f.started,
-    finished:!!f.finished&&f.team_h_score!==null}))
+    apiFinished:!!f.finished, finished:false}))
     .sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
   S.byRound={}; S.fixtures.forEach(f=>(S.byRound[f.round] ||= []).push(f));
   S.rounds=Object.keys(S.byRound).map(Number).sort((a,b)=>a-b);
-  S.currentRound=S.rounds.find(r=>S.byRound[r].some(f=>!hasEnded(f)))||S.rounds[S.rounds.length-1];
+  refreshFinished();
 }
+/* يُعاد تقييم حالة كل مباراة مع مرور الوقت ومع كل جلب جديد */
+function refreshFinished(){
+  const now=Date.now();
+  S.fixtures.forEach(f=>{
+    if(f.manual) return;                       // النتيجة اليدوية لها الأسبقية المطلقة
+    const scored = f.hs!==null&&f.hs!==undefined&&f.as!==null&&f.as!==undefined;
+    const late   = now > new Date(f.kickoff).getTime()+ENDED_MS;
+    f.finished = f.apiFinished || (scored && late);
+  });
+  if(S.rounds.length)
+    S.currentRound=S.rounds.find(r=>S.byRound[r].some(f=>!hasEnded(f)))||S.rounds[S.rounds.length-1];
+}
+
 async function fetchFixtures(){
   const raw=await getJSON(`${CFG.API}/fixtures/`);
   if(!Array.isArray(raw)) throw new Error('البيانات المستلمة غير متوقّعة');
@@ -709,9 +723,14 @@ function applyManual(){
            if(r.hs!==null){ f.hs=r.hs; f.as=r.as; } }
     else { f.manual=false; f.manualOutcome=null; }
   });
+  refreshFinished();
+  S.fixtures.forEach(f=>{
+    if(S.results[f.id]) f.finished=true;
+  });
   S.currentRound=S.rounds.find(r=>S.byRound[r].some(f=>!hasEnded(f)))||S.rounds[S.rounds.length-1];
 }
 function paint(){
+  refreshFinished();
   renderRounds();renderMatches();renderRemind();renderMe();renderPrev();
   renderTable();renderStars();renderTeams();renderBoard();
   $('#roundBadge').textContent=roundName(S.currentRound);
@@ -1669,7 +1688,7 @@ S.me=localStorage.getItem('splName')||'';
 if(S.me)$('#meBtn').querySelector('span').textContent=S.me;
 starsMode('g');
 loadAll();
-setInterval(()=>{if(S.ready){renderMatches();renderRemind();}},30000);
+setInterval(()=>{if(S.ready){refreshFinished();renderMatches();renderRemind();renderPrev();}},30000);
 setInterval(()=>{if(S.ready)loadAll();},300000);
 
 Object.assign(window,{openPick,openMatch,openPlayer,loadAll,hide,starsMode,boardTab,
