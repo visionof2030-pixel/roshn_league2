@@ -434,7 +434,8 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
     <button class="tab" data-p="me">🎯 توقعاتي</button>
     <button class="tab" data-p="prev">📋 المباريات السابقة</button>
     <button class="tab" data-p="table">📊 الترتيب</button>
-    <button class="tab" data-p="stars">🏅 الهدافون</button>
+    <button class="tab" data-p="news">📰 أخبار الجولة</button>
+    <button class="tab" data-p="stars">🏅 الأرقام</button>
     <button class="tab" data-p="teams">📈 إحصائيات الفرق</button>
     <button class="tab" data-p="board">🏆 المتصدرون</button>
   </div>
@@ -465,10 +466,20 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
       <span>يُحتسب من المباريات المنتهية فقط</span></div>
   </section>
 
+  <section class="panel" id="p-news">
+    <div class="sec-title">📰 أخبار الجولة <span class="pill" id="newsNote">—</span></div>
+    <div id="newsWrap"></div>
+  </section>
+
   <section class="panel" id="p-stars">
-    <div class="sec-title">🏅 الهدافون وصنّاع اللعب <span class="pill" id="starsNote">—</span></div>
-    <div class="row"><button class="btn solid" id="sbG" onclick="starsMode('g')">⚽ الهدافون</button>
-      <button class="btn" id="sbA" onclick="starsMode('a')">🅰️ صنّاع اللعب</button></div>
+    <div class="sec-title">🏅 أرقام اللاعبين <span class="pill" id="starsNote">—</span></div>
+    <div class="row" style="gap:6px">
+      <button class="btn solid" id="sbG" onclick="starsMode('g')">⚽ الهدافون</button>
+      <button class="btn" id="sbA" onclick="starsMode('a')">🅰️ الصناعة</button>
+      <button class="btn" id="sbC" onclick="starsMode('c')">🟨 البطاقات</button>
+      <button class="btn" id="sbK" onclick="starsMode('k')">🧤 الحراس</button>
+      <button class="btn" id="sbS" onclick="starsMode('s')">🔥 الأكثر اختياراً</button>
+    </div>
     <div class="tbl-wrap"><table id="starsTbl"></table></div>
   </section>
 
@@ -584,7 +595,7 @@ const ICON_USERS=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const ICON_BOLT=`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5z"/></svg>`;
 
 const RESULT_USER='#result';   // صف محجوز لتخزين النتائج اليدوية داخل نفس الجدول
-const S={fixtures:[],byRound:{},rounds:[],apiTeams:{},players:[],currentRound:1,viewRound:1,
+const S={fixtures:[],byRound:{},rounds:[],apiTeams:{},players:[],byPlayer:{},events:[],currentRound:1,viewRound:1,
   preds:[],results:{},me:'',admin:false,ready:false,starsMode:'g',boardTab:'rank'};
 let charts={};
 let sb=null; try{ sb=supabase.createClient(CFG.SB_URL,CFG.SB_KEY); }catch(e){ console.error(e); }
@@ -658,7 +669,7 @@ function mapFixtures(raw){
   S.fixtures=raw.map(f=>({id:f.id,round:f.event,kickoff:f.kickoff_time,
     provisional:!!f.provisional_start_time,home:f.team_h,away:f.team_a,
     hs:f.team_h_score,as:f.team_a_score,started:!!f.started,
-    apiFinished:!!f.finished, finished:false}))
+    apiFinished:!!f.finished, finished:false, stats:f.stats||[]}))
     .sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
   S.byRound={}; S.fixtures.forEach(f=>(S.byRound[f.round] ||= []).push(f));
   S.rounds=Object.keys(S.byRound).map(Number).sort((a,b)=>a-b);
@@ -684,17 +695,32 @@ async function fetchFixtures(){
 }
 function mapBootstrap(b){
   (b.teams||[]).forEach(t=>S.apiTeams[t.id]=t);
-  S.players=(b.elements||[]).map(e=>({name:e.web_name||e.second_name,team:e.team,
-    goals:+e.goals_scored||0,assists:+e.assists||0,mins:+e.minutes||0,pts:+e.total_points||0}));
+  S.events=(b.events||[]).map(e=>({id:e.id,deadline:e.deadline_time,finished:!!e.finished,
+    top:e.top_element_info||null,high:e.highest_score,avg:e.average_entry_score,
+    sel:e.most_selected,cap:e.most_captained,count:e.ranked_count}));
+  S.players=(b.elements||[]).map(e=>({id:e.id,name:e.web_name||e.second_name,team:e.team,
+    pos:+e.element_type||0,
+    goals:+e.goals_scored||0,assists:+e.assists||0,mins:+e.minutes||0,pts:+e.total_points||0,
+    yc:+e.yellow_cards||0, rc:+e.red_cards||0, cs:+e.clean_sheets||0,
+    saves:+e.saves||0, gc:+e.goals_conceded||0, bonus:+e.bonus||0,
+    news:e.news||'', chance:(e.chance_of_playing_next_round===null?100:+e.chance_of_playing_next_round),
+    selpc:parseFloat(e.selected_by_percent)||0, cost:(+e.now_cost||0)/10,
+    chg:(+e.cost_change_event||0)/10, ep:parseFloat(e.ep_next)||0}));
+  S.byPlayer={}; S.players.forEach(p=>S.byPlayer[p.id]=p);
 }
 /* ملف اللاعبين ضخم — يُجلب في الخلفية ولا يؤخّر ظهور المباريات */
 async function fetchBootstrap(){
   try{
     const b=await getJSON(`${CFG.API}/bootstrap-static/`);
-    cacheSet('bs',{teams:b.teams,elements:(b.elements||[]).map(e=>({web_name:e.web_name,
-      second_name:e.second_name,team:e.team,goals_scored:e.goals_scored,assists:e.assists,
-      minutes:e.minutes,total_points:e.total_points}))});
-    mapBootstrap(b); renderStars(); renderTeams(); renderMatches();
+    cacheSet('bs',{teams:b.teams,events:b.events,elements:(b.elements||[]).map(e=>({id:e.id,
+      web_name:e.web_name,second_name:e.second_name,team:e.team,element_type:e.element_type,
+      goals_scored:e.goals_scored,assists:e.assists,minutes:e.minutes,total_points:e.total_points,
+      yellow_cards:e.yellow_cards,red_cards:e.red_cards,clean_sheets:e.clean_sheets,saves:e.saves,
+      goals_conceded:e.goals_conceded,bonus:e.bonus,news:e.news,
+      chance_of_playing_next_round:e.chance_of_playing_next_round,
+      selected_by_percent:e.selected_by_percent,now_cost:e.now_cost,
+      cost_change_event:e.cost_change_event,ep_next:e.ep_next}))});
+    mapBootstrap(b); renderStars(); renderNews(); renderTeams(); renderMatches(); renderRemind();
   }catch(e){ console.warn('تعذّر جلب بيانات اللاعبين',e); }
 }
 async function fetchPreds(){
@@ -732,7 +758,7 @@ function applyManual(){
 function paint(){
   refreshFinished();
   renderRounds();renderMatches();renderRemind();renderMe();renderPrev();
-  renderTable();renderStars();renderTeams();renderBoard();
+  renderTable();renderStars();renderNews();renderTeams();renderBoard();
   $('#roundBadge').textContent=roundName(S.currentRound);
   const live=S.fixtures.filter(f=>f.started&&!f.finished).length;
   $('#liveStat').textContent=live?`🔴 ${live} مباراة الآن`:`${S.fixtures.filter(f=>f.finished).length} مباراة منتهية`;
@@ -781,9 +807,19 @@ function teamForm(id){
     else if((res==='HOME')===(f.home===id)) w++; else l++; });
   return {p,gf,ga,w,d,l,pts:w*3+d};
 }
+/* مجموع النقاط المتوقعة (ep_next) لأفضل 11 لاعباً في النادي */
+function squadEP(id){
+  const list=S.players.filter(p=>p.team===id&&p.chance>25).sort((a,b)=>b.ep-a.ep).slice(0,11);
+  return list.reduce((s,p)=>s+p.ep,0);
+}
 function aiOdds(f){
   const api=id=>{const t=S.apiTeams[id];return t?(t.strength_overall_home||t.strength||1100):1100;};
-  const seed=id=>(PRESTIGE[id]||1000)*0.65+api(id)*0.35;
+  const eps=id=>{const e=squadEP(id); return e>0 ? 880+e*7 : 0;};
+  const seed=id=>{
+    const e=eps(id);
+    return e ? (PRESTIGE[id]||1000)*0.48 + api(id)*0.20 + e*0.32
+             : (PRESTIGE[id]||1000)*0.65 + api(id)*0.35;
+  };
   let hs=seed(f.home)*1.08, as=seed(f.away);
   const fh=teamForm(f.home), fa=teamForm(f.away), played=Math.min(fh.p,fa.p);
   if(played>0){
@@ -940,8 +976,15 @@ function renderTable(){
     if(res==='HOME'){H.w++;H.pts+=3;A.l++;}
     else if(res==='AWAY'){A.w++;A.pts+=3;H.l++;}
     else {H.d++;A.d++;H.pts++;A.pts++;}});
+  // الترتيب الرسمي من الرابطة يتقدّم على الحساب المحلي متى توفّر
+  const official=Object.values(S.apiTeams).some(x=>(+x.played||0)>0);
+  if(official) Object.values(S.apiTeams).forEach(x=>{
+    const r=t[x.id]; if(!r) return;
+    r.p=+x.played||0; r.w=+x.win||0; r.d=+x.draw||0; r.l=+x.loss||0; r.pts=+x.points||0;
+  });
   const rows=Object.values(t).sort((a,b)=>b.pts-a.pts||(b.gf-b.ga)-(a.gf-a.ga)||b.gf-a.gf||tName(a.id).localeCompare(tName(b.id)));
-  $('#tblNote').textContent=played?`${played} مباراة`:'لم تبدأ المنافسة بعد';
+  $('#tblNote').textContent = official ? 'المصدر: رابطة الدوري'
+    : (played?`${played} مباراة · حساب محلي`:'لم تبدأ المنافسة بعد');
   $('#tbl').innerHTML=`<thead><tr><th>#</th><th style="text-align:right">النادي</th>
     <th>ل</th><th>ف</th><th>ت</th><th>خ</th><th>له</th><th>عليه</th><th>±</th><th>ن</th></tr></thead>
     <tbody>${rows.map((r,i)=>{const gd=r.gf-r.ga;
@@ -953,8 +996,19 @@ function renderTable(){
 }
 
 /* الهدافون */
+const STAR_MODES={
+  g:{t:'⚽ الهدافون', k:'goals', c:['أهداف','صناعة','دقائق'], f:p=>[p.goals,p.assists,p.mins]},
+  a:{t:'🅰️ صنّاع اللعب', k:'assists', c:['صناعة','أهداف','دقائق'], f:p=>[p.assists,p.goals,p.mins]},
+  c:{t:'🟨 البطاقات', k:'cards', c:['🟨','🟥','دقائق'], f:p=>[p.yc,p.rc,p.mins]},
+  k:{t:'🧤 الحراس', k:'saves', c:['تصديات','شباك نظيفة','استقبل'], f:p=>[p.saves,p.cs,p.gc]},
+  s:{t:'🔥 الأكثر اختياراً', k:'selpc', c:['نسبة الاختيار','السعر','التغيّر'],
+     f:p=>[p.selpc+'%', p.cost.toFixed(1), (p.chg>0?'+':'')+p.chg.toFixed(1)]}
+};
 function starsMode(m){S.starsMode=m;
-  $('#sbG').className='btn'+(m==='g'?' solid':''); $('#sbA').className='btn'+(m==='a'?' solid':'');
+  ({g:'sbG',a:'sbA',c:'sbC',k:'sbK',s:'sbS'});
+  ['g','a','c','k','s'].forEach(x=>{
+    const b=document.getElementById({g:'sbG',a:'sbA',c:'sbC',k:'sbK',s:'sbS'}[x]);
+    if(b) b.className='btn'+(x===m?' solid':'');});
   renderStars();}
 function toggleOld(){ S.showOld=!S.showOld; renderStars(); }
 function renderStars(){
@@ -972,24 +1026,26 @@ function renderStars(){
   }
   if(!S.players.length){$('#starsNote').textContent='غير متاح';
     $('#starsTbl').innerHTML=`<tbody><tr><td style="padding:26px">تعذّر جلب بيانات اللاعبين</td></tr></tbody>`;return;}
-  const key=S.starsMode==='g'?'goals':'assists';
-  const top=S.players.filter(p=>p[key]>0).sort((a,b)=>b[key]-a[key]||b.pts-a.pts).slice(0,40);
-  $('#starsNote').textContent=top.length?`${top.length} لاعب`:'لم تُسجَّل أرقام بعد';
+  const M=STAR_MODES[S.starsMode]||STAR_MODES.g;
+  let pool=S.players;
+  if(S.starsMode==='k') pool=pool.filter(p=>p.pos===1);
+  const val=p=>M.k==='cards'?(p.rc*10+p.yc):p[M.k];
+  const top=pool.filter(p=>val(p)>0).sort((a,b)=>val(b)-val(a)||b.pts-a.pts).slice(0,40);
+  $('#starsNote').textContent=top.length?`${top.length} لاعب`:'لا أرقام بعد';
   if(!top.length){$('#starsTbl').innerHTML=`<tbody><tr><td style="padding:26px;color:var(--ink-3)">
-    لم يُسجَّل ${S.starsMode==='g'?'أي هدف':'أي صناعة'} حتى الآن — تظهر القائمة تلقائياً مع انطلاق الجولات</td></tr></tbody>`;return;}
-  const label=S.starsMode==='g'?'أهداف':'صناعة';
+    لم تُسجَّل أرقام في «${M.t}» حتى الآن — تظهر تلقائياً مع انطلاق الجولات</td></tr></tbody>`;return;}
   const banner = seasonStarted ? '' :
     `<tr><td colspan="6" style="background:rgba(240,180,41,.14);color:var(--draw);
       font-size:.62rem;font-weight:800;padding:8px">⚠️ هذه أرقام الموسم الماضي — لم يبدأ رصد الموسم الحالي
       <button class="btn" style="margin-right:10px;padding:3px 12px;font-size:.6rem" onclick="toggleOld()">إخفاء</button>
     </td></tr>`;
   $('#starsTbl').innerHTML=`<thead><tr><th>#</th><th style="text-align:right">اللاعب</th>
-    <th style="text-align:right">النادي</th><th>${label}</th><th>الآخر</th><th>دقائق</th></tr></thead>
+    <th style="text-align:right">النادي</th><th>${M.c[0]}</th><th>${M.c[1]}</th><th>${M.c[2]}</th></tr></thead>
     <tbody>${banner}${top.map((p,i)=>{const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1);
-      const other=S.starsMode==='g'?p.assists:p.goals;
+      const v=M.f(p);
       return `<tr><td>${medal}</td><td class="team">${p.name}</td>
         <td class="team"><div class="in">${crest(p.team)}<span>${tName(p.team)}</span></div></td>
-        <td class="pts">${p[key]}</td><td>${other}</td><td>${p.mins}</td></tr>`;}).join('')}</tbody>`;
+        <td class="pts">${v[0]}</td><td>${v[1]}</td><td>${v[2]}</td></tr>`;}).join('')}</tbody>`;
 }
 
 /* إحصائيات الفرق */
@@ -1153,6 +1209,40 @@ function drawBoardCharts(){
     {data:Object.values(cnt),backgroundColor:['#3e8fd8b3','#00b492b3','#f0b429b3','#f0555fb3','#7c74d8b3','#22c07db3','#e07b1ab3','#8e8e8eb3']}]});
 }
 
+/* ===== موعد الإقفال الرسمي (deadline_time) ===== */
+function roundDeadline(r){
+  const e=S.events.find(x=>x.id===r);
+  return e&&e.deadline ? new Date(e.deadline) : null;
+}
+function deadlineText(r){
+  const d=roundDeadline(r); if(!d) return '';
+  const left=d.getTime()-Date.now();
+  const when=d.toLocaleString('ar-SA',{timeZone:CFG.TZ,weekday:'long',day:'numeric',
+    month:'long',hour:'2-digit',minute:'2-digit',hour12:false});
+  if(left<=0) return 'أُقفلت الجولة رسمياً · '+when;
+  const dd=Math.floor(left/864e5), hh=Math.floor((left%864e5)/36e5), mm=Math.floor((left%36e5)/6e4);
+  const rem = dd>0?`${dd} يوم و${hh} ساعة`:(hh>0?`${hh} ساعة و${mm} دقيقة`:`${mm} دقيقة`);
+  return `الإقفال الرسمي: ${when} · متبقٍ ${rem}`;
+}
+/* إحصاءات المباراة الواردة من الـ API (أهداف · صناعة · بطاقات) */
+const STAT_AR={goals_scored:'⚽ هدف',assists:'🅰️ صناعة',own_goals:'⚽ هدف عكسي',
+  yellow_cards:'🟨 إنذار',red_cards:'🟥 طرد',penalties_saved:'🧤 تصدي ركلة',
+  penalties_missed:'❌ ركلة ضائعة',saves:'🧤 تصديات',bonus:'⭐ إضافية'};
+function matchEvents(f){
+  const out=[];
+  (f.stats||[]).forEach(s=>{
+    const label=STAT_AR[s.identifier]; if(!label) return;
+    ['h','a'].forEach(side=>{
+      (s[side]||[]).forEach(x=>{
+        const pl=S.byPlayer[x.element];
+        out.push({label,side,name:pl?pl.name:('لاعب '+x.element),v:x.value,
+          team:side==='h'?f.home:f.away});
+      });
+    });
+  });
+  return out;
+}
+
 /* ===== 5) تذكير قبل الإقفال ===== */
 function renderRemind(){
   const el=$('#remind'); if(!el) return;
@@ -1172,14 +1262,58 @@ function renderRemind(){
   else if(hh<24) txt=`يُقفل أول توقع بعد ${hh} ساعة و${mm} دقيقة`;
   else txt=`يُقفل أول توقع بعد ${Math.floor(hh/24)} يوم`;
   el.className='remind on';
+  const dl=deadlineText(S.currentRound);
   el.innerHTML=`<span class="em">⏰</span><span class="txt">
     بقيت <b>${miss.length}</b> ${miss.length===1?'مباراة لم تتوقعها':'مباريات لم تتوقعها'} في ${roundName(S.currentRound)}
-    <small>${txt}</small></span>
+    <small>${txt}${dl?' · '+dl:''}</small></span>
     <button class="btn solid" onclick="goPick(${miss[0].id})">توقع الآن</button>`;
 }
 function goPick(fid){
   const f=fixtureById(fid); if(!f) return;
   S.viewRound=f.round; renderRounds(); renderMatches(); openPick(fid);
+}
+
+/* ===== ٢ + ٧) أخبار الجولة: الإقفال · الغيابات · نجوم الجولة ===== */
+function renderNews(){
+  const w=$('#newsWrap'); if(!w) return;
+  if(!S.players.length){
+    $('#newsNote').textContent='—';
+    w.innerHTML=`<div class="empty"><span>⏳</span> جارٍ تحميل بيانات اللاعبين…</div>`; return; }
+
+  const dl=deadlineText(S.currentRound);
+  const head=`<div class="mecard" style="margin-bottom:12px">
+    <div style="font-size:1.6rem">⏰</div>
+    <div class="who"><h3>${roundName(S.currentRound)}</h3>
+      <div style="font-size:.66rem;color:var(--ink-2)">${dl||'لم يُعلن موعد الإقفال الرسمي'}</div></div></div>`;
+
+  const out=S.players.filter(p=>p.chance<100||p.news).sort((a,b)=>a.chance-b.chance||b.selpc-a.selpc);
+  $('#newsNote').textContent = out.length?`${out.length} حالة غياب أو شك`:'لا غيابات معلنة';
+  const color=c=>c===0?'var(--lose)':(c<=50?'var(--draw)':'var(--brand-2)');
+  const injury = out.length
+    ? `<div class="sec-title" style="font-size:.85rem">🚑 الغيابات والجاهزية</div>
+       <div class="melist">${out.slice(0,60).map(p=>`<div class="merow">
+         <span class="mt">${p.name} <span style="color:var(--ink-3);font-size:.6rem">${tName(p.team)}</span></span>
+         <span style="flex:2;min-width:150px;color:var(--ink-2);font-size:.62rem">${p.news||'—'}</span>
+         <span class="tag" style="background:${color(p.chance)};color:#fff">${p.chance}% جاهزية</span>
+       </div>`).join('')}</div>`
+    : `<div class="empty" style="padding:22px"><span>✅</span> لا غيابات أو إصابات معلنة حالياً</div>`;
+
+  const ev=S.events.filter(e=>e.finished||e.top).slice().reverse();
+  const stars = ev.length ? `<div class="sec-title" style="font-size:.85rem;margin-top:16px">⭐ نجوم الجولات</div>
+    <div class="champs">${ev.slice(0,8).map(e=>{
+      const pl=e.top?S.byPlayer[e.top.id]:null;
+      return `<div class="chip"><span class="k">${e.top?e.top.points:'—'}</span><span class="t">
+        <span class="a">${pl?pl.name:'—'}</span>
+        <span class="b">${roundName(e.id)} · أعلى نقاط ${e.high??'—'} · المعدل ${e.avg??'—'}</span></span></div>`;
+    }).join('')}</div>` : '';
+
+  const hot=[...S.players].sort((a,b)=>b.selpc-a.selpc).slice(0,6);
+  const hotHtml=`<div class="sec-title" style="font-size:.85rem;margin-top:16px">🔥 الأكثر اختياراً بين المشاركين</div>
+    <div class="champs">${hot.map(p=>`<div class="chip">
+      <span class="k" style="font-size:.6rem">${p.selpc}%</span><span class="t">
+      <span class="a">${p.name}</span><span class="b">${tName(p.team)} · ${p.cost.toFixed(1)}م</span></span></div>`).join('')}</div>`;
+
+  w.innerHTML=head+injury+stars+hotHtml;
 }
 
 /* ===== 4) بطل كل جولة ===== */
@@ -1397,7 +1531,13 @@ function openMatch(fid){
     : (hasEnded(f)
         ? `${roundName(f.round)} · انتهت · بانتظار اعتماد النتيجة · ${all.length} متسابق`
         : `${roundName(f.round)} · ${ksaDate(f.kickoff)} · ${all.length} متسابق · التوقعات مخفية حتى انتهاء المباراة`);
-  $('#mpList').innerHTML=all.length?all.map(p=>{
+  const ev=matchEvents(f);
+  const evHtml = ev.length ? `<div class="pitem" style="flex-direction:column;align-items:stretch;gap:5px">
+      <b style="font-size:.66rem;color:var(--brand)">📊 أحداث المباراة</b>
+      ${ev.map(e=>`<span style="font-size:.63rem">${e.label} — <b>${e.name}</b>
+        <span style="color:var(--ink-3)">(${tName(e.team)})</span>${e.v>1?' ×'+e.v:''}</span>`).join('')}
+    </div>` : '';
+  $('#mpList').innerHTML=evHtml+(all.length?all.map(p=>{
     const isMe=p.user_name===S.me; let val,tag,cls='';
     if(reveal){
       const right=sideOf(f,p.prediction)===res;
@@ -1410,7 +1550,7 @@ function openMatch(fid){
     return `<div class="pitem ${cls}">
       <span class="who" style="cursor:pointer" onclick="hide('#vMatch');openPlayer('${esc(p.user_name)}')">${p.user_name}</span>
       <span style="color:var(--ink-2)">${val}</span>${tag}</div>`;
-  }).join('') : `<div class="empty"><span>📭</span> لا توقعات بعد</div>`;
+  }).join('') : `<div class="empty"><span>📭</span> لا توقعات بعد</div>`);
   show('#vMatch');
 }
 function openPlayer(name){
@@ -1696,7 +1836,7 @@ setInterval(()=>{if(S.ready)loadAll();},300000);
 
 Object.assign(window,{openPick,openMatch,openPlayer,loadAll,hide,starsMode,boardTab,
   renderCompare,adminTab,adminSave,adminDelete,adminLoadPred,fillPlayers,lockAdmin,toggleTheme,
-  resLoad,resSave,resDelete,staleDeleteAll,staleCopy,goPick,shareCard,exportCSV,renderMe,paint,toggleOld});
+  resLoad,resSave,resDelete,staleDeleteAll,staleCopy,goPick,shareCard,exportCSV,renderMe,paint,toggleOld,renderNews});
 </script>
 </body>
 </html>
