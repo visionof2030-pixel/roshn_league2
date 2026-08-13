@@ -812,7 +812,9 @@ function latest(rows){
   const m={};
   rows.forEach(p=>{
     const k=p.user_name+'|'+fidOf(p.match_id), old=m[k];
-    if(!old || new Date(p.created_at||0) >= new Date(old.created_at||0)) m[k]=p;
+    if(!old){ m[k]=p; return; }
+    const a=new Date(p.created_at||0).getTime(), b=new Date(old.created_at||0).getTime();
+    if(a>b || (a===b && String(p.id)>String(old.id))) m[k]=p;   // تعادل التوقيت: نأخذ الأحدث معرّفاً
   });
   return Object.values(m);
 }
@@ -1015,7 +1017,7 @@ function renderTeams(){
 /* المتصدرون */
 function scoreboard(){
   const map={};
-  S.preds.forEach(p=>{const f=fixtureById(fidOf(p.match_id)); if(!f)return;
+  latest(S.preds).forEach(p=>{const f=fixtureById(fidOf(p.match_id)); if(!f)return;
     const u=(map[p.user_name] ||= {name:p.user_name,pts:0,ok:0,no:0,total:0,wait:0});
     u.total++; const res=outcome(f); if(!res){u.wait++;return;}
     if(sideOf(f,p.prediction)===res){u.pts++;u.ok++;} else u.no++;});
@@ -1082,7 +1084,7 @@ function renderCompare(){
   if(n1===n2){out.innerHTML=`<div class="empty"><span>⚠️</span> اختر متسابقَين مختلفَين</div>`;return;}
   const b=scoreboard(),p1=b.find(u=>u.name===n1),p2=b.find(u=>u.name===n2);
   const byFid={};
-  S.preds.forEach(p=>{if(p.user_name!==n1&&p.user_name!==n2)return;
+  latest(S.preds).forEach(p=>{if(p.user_name!==n1&&p.user_name!==n2)return;
     const fid=fidOf(p.match_id);(byFid[fid] ||= {})[p.user_name===n1?'a':'b']=p;});
   let aB=0,bB=0,same=0,rows='';
   Object.keys(byFid).map(Number).sort((x,y)=>x-y).forEach(fid=>{
@@ -1413,7 +1415,8 @@ function openMatch(fid){
 }
 function openPlayer(name){
   const b=scoreboard(),u=b.find(x=>x.name===name);
-  const list=S.preds.filter(p=>p.user_name===name).sort((a,b2)=>fidOf(a.match_id)-fidOf(b2.match_id));
+  const list=latest(S.preds.filter(p=>p.user_name===name))
+    .sort((a,b2)=>fidOf(a.match_id)-fidOf(b2.match_id));
   $('#plTitle').textContent=name;
   $('#plLead').textContent=u?`المركز ${u.rank} · ${u.pts} نقطة · دقة ${u.acc}% · ${u.total} توقع`:'لا توقعات';
   $('#plList').innerHTML=list.length?list.map(p=>{
