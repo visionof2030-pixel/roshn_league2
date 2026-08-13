@@ -601,6 +601,10 @@ function crest(id,cls){
 const ksaTime=i=>new Date(i).toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:CFG.TZ});
 const ksaDate=i=>new Date(i).toLocaleDateString('ar-SA',{weekday:'long',day:'numeric',month:'long',timeZone:CFG.TZ});
 const isLocked=i=>Date.now()>(new Date(i).getTime()-CFG.LOCK_MIN*60000);
+/* خادم الرابطة لا يحدّث finished إطلاقاً، لذا نحكم بالوقت:
+   مباراة مضى على انطلاقها أكثر من ساعتين و10 دقائق تُعتبر منتهية */
+const ENDED_MS=130*60000;
+const hasEnded=f=>!!f.finished || Date.now() > new Date(f.kickoff).getTime()+ENDED_MS;
 function countdown(iso){let d=new Date(iso).getTime()-Date.now(); if(d<=0)return 'بدأت';
   const day=Math.floor(d/864e5);d-=day*864e5;const h=Math.floor(d/36e5);d-=h*36e5;const m=Math.floor(d/6e4);
   if(day>0)return `بعد ${day} يوم`; if(h>0)return `بعد ${h}س ${m}د`; return `بعد ${m} دقيقة`;}
@@ -657,7 +661,7 @@ function mapFixtures(raw){
     .sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
   S.byRound={}; S.fixtures.forEach(f=>(S.byRound[f.round] ||= []).push(f));
   S.rounds=Object.keys(S.byRound).map(Number).sort((a,b)=>a-b);
-  S.currentRound=S.rounds.find(r=>S.byRound[r].some(f=>!f.finished))||S.rounds[S.rounds.length-1];
+  S.currentRound=S.rounds.find(r=>S.byRound[r].some(f=>!hasEnded(f)))||S.rounds[S.rounds.length-1];
 }
 async function fetchFixtures(){
   const raw=await getJSON(`${CFG.API}/fixtures/`);
@@ -705,7 +709,7 @@ function applyManual(){
            if(r.hs!==null){ f.hs=r.hs; f.as=r.as; } }
     else { f.manual=false; f.manualOutcome=null; }
   });
-  S.currentRound=S.rounds.find(r=>S.byRound[r].some(f=>!f.finished))||S.rounds[S.rounds.length-1];
+  S.currentRound=S.rounds.find(r=>S.byRound[r].some(f=>!hasEnded(f)))||S.rounds[S.rounds.length-1];
 }
 function paint(){
   renderRounds();renderMatches();renderRemind();renderMe();renderPrev();
@@ -812,8 +816,14 @@ function countBtn(f,n){
 }
 
 function renderMatches(){
-  const list=S.byRound[S.viewRound]||[];
-  if(!list.length){$('#matches').innerHTML=`<div class="empty"><span>📭</span> لا مباريات في هذه الجولة</div>`;return;}
+  const all0=S.byRound[S.viewRound]||[];
+  const list=all0.filter(f=>!hasEnded(f));          // المنتهية تنتقل لتبويب السابقة
+  const gone=all0.length-list.length;
+  const note=gone?`<div class="lockmsg" style="grid-column:1/-1;margin-bottom:2px">
+      ✅ ${gone} ${gone===1?'مباراة انتهت وانتقلت':'مباريات انتهت وانتقلت'} إلى تبويب «المباريات السابقة»</div>`:'';
+  if(!list.length){
+    $('#matches').innerHTML=note+`<div class="empty"><span>🏁</span> انتهت كل مباريات هذه الجولة
+      <br><small>تجدها في تبويب «المباريات السابقة»</small></div>`;return;}
   $('#matches').innerHTML=list.map(f=>{
     const live=f.started&&!f.finished, res=outcome(f), mine=myPred(f.id), all=predsOf(f.id);
     let mid;
@@ -822,7 +832,7 @@ function renderMatches(){
     else mid=`<div class="ko">${ksaTime(f.kickoff)}</div><div class="ko-d">${countdown(f.kickoff)}</div>`;
 
     let ai='';
-    if(!f.finished){
+    if(!hasEnded(f)){
       const o=aiOdds(f);
       ai=`<div class="ai"><div class="ai-t">🤖 تحليل الذكاء الاصطناعي</div>
         <div class="ai-bar">
@@ -865,28 +875,35 @@ function renderMatches(){
         <div class="side">${crest(f.away)}<span class="side-name">${tName(f.away)}</span></div>
       </div>${ai}${bars}${mineHtml}${actions}</article>`;
   }).join('');
+  $('#matches').innerHTML = note + $('#matches').innerHTML;
 }
 
 /* المباريات السابقة */
 function renderPrev(){
-  const done=S.fixtures.filter(f=>f.finished).slice().reverse();
+  const done=S.fixtures.filter(hasEnded).slice().reverse();
   $('#prevNote').textContent = done.length?`${done.length} مباراة`:'لم تُلعب مباريات بعد';
   if(!done.length){
     $('#prevWrap').innerHTML=`<div class="empty"><span>📭</span> لا توجد مباريات منتهية بعد
       <br><small>تظهر هنا تلقائياً بعد صافرة النهاية</small></div>`; return; }
+  const waiting=done.filter(f=>!outcome(f)).length;
+  if(waiting) $('#prevNote').textContent=`${done.length} مباراة · ${waiting} بانتظار النتيجة`;
   $('#prevWrap').innerHTML=done.map(f=>{
     const all=predsOf(f.id), res=outcome(f);
     const ok=all.filter(p=>sideOf(f,p.prediction)===res).length;
+    const mid = res
+      ? `<div class="sc" style="${hasScore(f)?'':'font-size:.66rem'}">${scoreLine(f)}</div>`
+      : `<div class="sc" style="font-size:.58rem;background:rgba(240,180,41,.18);color:var(--draw)">بانتظار النتيجة</div>`;
+    const sum = res
+      ? `<span class="g">✅ صحيح ${ok}</span><span class="r">❌ خاطئ ${all.length-ok}</span>
+         <span class="n">${all.length} توقع</span>`
+      : `<span class="n">${all.length} توقع · لم تُحتسب بعد</span>`;
     return `<div class="prevcard" onclick="openMatch(${f.id})">
       <div class="top"><span>${roundName(f.round)}</span><span>${ksaDate(f.kickoff)}</span></div>
       <div class="mid">
         <div class="nm">${crest(f.home)}<span>${tName(f.home)}</span></div>
-        <div class="sc" style="${hasScore(f)?'':'font-size:.66rem'}">${scoreLine(f)}</div>
+        ${mid}
         <div class="nm a">${crest(f.away)}<span>${tName(f.away)}</span></div></div>
-      <div class="sum">
-        <span class="g">✅ صحيح ${ok}</span>
-        <span class="r">❌ خاطئ ${all.length-ok}</span>
-        <span class="n">${all.length} توقع</span></div></div>`;
+      <div class="sum">${sum}</div></div>`;
   }).join('');
 }
 
@@ -918,7 +935,20 @@ function renderTable(){
 function starsMode(m){S.starsMode=m;
   $('#sbG').className='btn'+(m==='g'?' solid':''); $('#sbA').className='btn'+(m==='a'?' solid':'');
   renderStars();}
+function toggleOld(){ S.showOld=!S.showOld; renderStars(); }
 function renderStars(){
+  const seasonStarted=S.fixtures.some(f=>outcome(f));
+  if(S.players.length && !seasonStarted && !S.showOld){
+    $('#starsNote').textContent='لم يبدأ الرصد';
+    $('#starsTbl').innerHTML=`<tbody><tr><td style="padding:24px;line-height:2">
+      <div style="font-size:.8rem;font-weight:800;color:var(--draw)">⚠️ لم تُسجَّل أرقام هذا الموسم بعد</div>
+      <div style="font-size:.66rem;color:var(--ink-2);margin-top:6px">
+        الأرقام المتاحة في المصدر تعود إلى <b>الموسم الماضي</b> ولا تعبّر عن الموسم الحالي.<br>
+        تظهر أرقام الموسم الجديد تلقائياً بمجرد أن يبدأ المصدر برصدها.</div>
+      <button class="btn" style="margin-top:12px" onclick="toggleOld()">👁️ عرض أرقام الموسم الماضي</button>
+    </td></tr></tbody>`;
+    return;
+  }
   if(!S.players.length){$('#starsNote').textContent='غير متاح';
     $('#starsTbl').innerHTML=`<tbody><tr><td style="padding:26px">تعذّر جلب بيانات اللاعبين</td></tr></tbody>`;return;}
   const key=S.starsMode==='g'?'goals':'assists';
@@ -927,9 +957,14 @@ function renderStars(){
   if(!top.length){$('#starsTbl').innerHTML=`<tbody><tr><td style="padding:26px;color:var(--ink-3)">
     لم يُسجَّل ${S.starsMode==='g'?'أي هدف':'أي صناعة'} حتى الآن — تظهر القائمة تلقائياً مع انطلاق الجولات</td></tr></tbody>`;return;}
   const label=S.starsMode==='g'?'أهداف':'صناعة';
+  const banner = seasonStarted ? '' :
+    `<tr><td colspan="6" style="background:rgba(240,180,41,.14);color:var(--draw);
+      font-size:.62rem;font-weight:800;padding:8px">⚠️ هذه أرقام الموسم الماضي — لم يبدأ رصد الموسم الحالي
+      <button class="btn" style="margin-right:10px;padding:3px 12px;font-size:.6rem" onclick="toggleOld()">إخفاء</button>
+    </td></tr>`;
   $('#starsTbl').innerHTML=`<thead><tr><th>#</th><th style="text-align:right">اللاعب</th>
     <th style="text-align:right">النادي</th><th>${label}</th><th>الآخر</th><th>دقائق</th></tr></thead>
-    <tbody>${top.map((p,i)=>{const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1);
+    <tbody>${banner}${top.map((p,i)=>{const medal=i===0?'🥇':i===1?'🥈':i===2?'🥉':(i+1);
       const other=S.starsMode==='g'?p.assists:p.goals;
       return `<tr><td>${medal}</td><td class="team">${p.name}</td>
         <td class="team"><div class="in">${crest(p.team)}<span>${tName(p.team)}</span></div></td>
@@ -945,14 +980,15 @@ function renderTeams(){
       str:api.strength||0};}).sort((a,b)=>b.pts-a.pts||(b.gf-b.ga)-(a.gf-a.ga));
   const played=rows.reduce((s,r)=>s+r.p,0)/2;
   $('#teamsNote').textContent=played?`${Math.round(played)} مباراة`:'قبل انطلاق الموسم';
+  const showStr=rows.some(r=>r.str);   // المصدر يرسل strength=null، فنخفي العمود
   $('#teamsTbl').innerHTML=`<thead><tr><th style="text-align:right">النادي</th>
     <th>لعب</th><th>له</th><th>عليه</th><th>معدل التسجيل</th><th>معدل الاستقبال</th>
-    <th>شباك نظيفة</th><th>القوة</th></tr></thead>
+    <th>شباك نظيفة</th>${showStr?'<th>القوة</th>':''}</tr></thead>
     <tbody>${rows.map(r=>`<tr>
       <td class="team"><div class="in">${crest(r.id)}<span>${tName(r.id)}</span></div></td>
       <td>${r.p}</td><td class="pts">${r.gf}</td><td>${r.ga}</td>
       <td>${r.gpg.toFixed(2)}</td><td>${r.cpg.toFixed(2)}</td>
-      <td>${r.cs}</td><td>${r.str||'—'}</td></tr>`).join('')}</tbody>`;
+      <td>${r.cs}</td>${showStr?`<td>${r.str}</td>`:''}</tr>`).join('')}</tbody>`;
   drawBar('chT1',rows.map(r=>tName(r.id)),rows.map(r=>r.gf),'أهداف مسجلة','#00b492');
   drawBar('chT2',rows.map(r=>tName(r.id)),rows.map(r=>r.ga),'أهداف مستقبَلة','#f0555f');
 }
@@ -1337,7 +1373,9 @@ function openMatch(fid){
   $('#mpTitle').textContent=`${tName(f.home)} × ${tName(f.away)}`;
   $('#mpLead').textContent=reveal
     ?`النتيجة ${scoreLine(f)} · ${all.length} متسابق`
-    :`${roundName(f.round)} · ${ksaDate(f.kickoff)} · ${all.length} متسابق · التوقعات مخفية حتى انتهاء المباراة`;
+    : (hasEnded(f)
+        ? `${roundName(f.round)} · انتهت · بانتظار اعتماد النتيجة · ${all.length} متسابق`
+        : `${roundName(f.round)} · ${ksaDate(f.kickoff)} · ${all.length} متسابق · التوقعات مخفية حتى انتهاء المباراة`);
   $('#mpList').innerHTML=all.length?all.map(p=>{
     const isMe=p.user_name===S.me; let val,tag,cls='';
     if(reveal){
@@ -1636,7 +1674,7 @@ setInterval(()=>{if(S.ready)loadAll();},300000);
 
 Object.assign(window,{openPick,openMatch,openPlayer,loadAll,hide,starsMode,boardTab,
   renderCompare,adminTab,adminSave,adminDelete,adminLoadPred,fillPlayers,lockAdmin,toggleTheme,
-  resLoad,resSave,resDelete,staleDeleteAll,staleCopy,goPick,shareCard,exportCSV,renderMe,paint});
+  resLoad,resSave,resDelete,staleDeleteAll,staleCopy,goPick,shareCard,exportCSV,renderMe,paint,toggleOld});
 </script>
 </body>
 </html>
