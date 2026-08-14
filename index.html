@@ -647,7 +647,8 @@ const ICON_USERS=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
 const ICON_BOLT=`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5z"/></svg>`;
 
 const RESULT_USER='#result';   // صف محجوز لتخزين النتائج اليدوية داخل نفس الجدول
-const S={fixtures:[],byRound:{},rounds:[],apiTeams:{},players:[],byPlayer:{},events:[],currentRound:1,viewRound:1,
+const S={fixtures:[],byRound:{},rounds:[],apiTeams:{},players:[],byPlayer:{},events:[],
+  live:{},liveStats:{},liveScores:{},currentRound:1,viewRound:1,
   preds:[],results:{},me:'',admin:false,ready:false,starsMode:'g',boardTab:'rank'};
 let charts={};
 let sb=null; try{ sb=supabase.createClient(CFG.SB_URL,CFG.SB_KEY); }catch(e){ console.error(e); }
@@ -731,9 +732,15 @@ function mapFixtures(raw){
 function refreshFinished(){
   const now=Date.now();
   S.fixtures.forEach(f=>{
-    if(f.manual) return;                       // النتيجة اليدوية لها الأسبقية المطلقة
-    const scored = f.hs!==null&&f.hs!==undefined&&f.as!==null&&f.as!==undefined;
-    const late   = now > new Date(f.kickoff).getTime()+ENDED_MS;
+    if(f.manual){ f.src='يدوية'; return; }     // النتيجة اليدوية لها الأسبقية المطلقة
+    const late = now > new Date(f.kickoff).getTime()+ENDED_MS;
+    let scored = f.hs!==null&&f.hs!==undefined&&f.as!==null&&f.as!==undefined;
+    if(scored) f.src='الرابطة';
+    else {
+      const lv=S.liveScores[f.id];             // استنتاج من أرقام اللاعبين
+      if(lv && late){ f.hs=lv.hs; f.as=lv.as; scored=true; f.src='مستنتَجة'; }
+      else f.src=null;
+    }
     f.finished = f.apiFinished || (scored && late);
   });
   if(S.rounds.length)
@@ -775,6 +782,92 @@ async function fetchBootstrap(){
     mapBootstrap(b); renderStars(); renderNews(); renderCards(); renderTeams(); renderMatches(); renderRemind();
   }catch(e){ console.warn('تعذّر جلب بيانات اللاعبين',e); }
 }
+/* تُسحب الجولات المنتهية مرة واحدة، والجارية في كل تحديث */
+async function syncLive(){
+  const target=S.rounds.filter(r=>(S.byRound[r]||[]).some(f=>hasEnded(f)));
+  if(!target.length) return;
+  for(const r of target){
+    const done=(S.byRound[r]||[]).every(f=>hasEnded(f));
+    await fetchLive(r, !done && !!S.live[r]);   // الجولة الجارية تُحدَّث
+  }
+  buildFromLive(); applyLiveToPlayers();
+  refreshFinished(); applyManual();
+  paint(); if(S.admin) refreshAdmin();
+}
+
+/* ===== نقطة الجولة الحيّة =====
+   تحتوي أرقام كل لاعب في تلك الجولة (أهداف · صناعة · بطاقات · تصديات)
+   وتُستنتج منها نتيجة كل مباراة عبر goals_conceded لكل فريق.
+   تُحفظ الجولات المنتهية محلياً فلا تُسحب مرتين.                        */
+async function fetchLive(r, force){
+  if(S.live[r] && !force) return S.live[r];
+  const cached=cacheGet('lv'+r, 6*36e5);
+  if(cached && !force){ S.live[r]=cached; return cached; }
+  try{
+    const d=await getJSON(`${CFG.API}/event/${r}/live/`);
+    const els=(d.elements||[]).filter(e=>e.stats && (e.stats.played || e.stats.minutes>0));
+    const slim=els.map(e=>({i:e.id, m:e.stats.minutes, g:e.stats.goals_scored, a:e.stats.assists,
+      gc:e.stats.goals_conceded, cs:e.stats.clean_sheets, sv:e.stats.saves,
+      y:e.stats.yellow_cards, rc:e.stats.red_cards, og:e.stats.own_goals,
+      pts:e.stats.total_points,
+      fx:(e.explain&&e.explain[0]&&e.explain[0].fixture)||null}));
+    S.live[r]=slim;
+    const done=(S.byRound[r]||[]).every(f=>hasEnded(f));
+    if(done) cacheSet('lv'+r, slim);          // الجولة المنتهية لا تتغيّر
+    return slim;
+  }catch(e){ console.warn('تعذّر جلب أرقام الجولة '+r, e); return null; }
+}
+
+/* تجميع كل الجولات المسحوبة: أرقام الموسم الحقيقية + النتائج المستنتَجة */
+function buildFromLive(){
+  const agg={}, scores={};
+  Object.keys(S.live).map(Number).forEach(r=>{
+    // ١) أرقام اللاعبين تُجمع عبر الجولات
+    (S.live[r]||[]).forEach(e=>{
+      const a=(agg[e.i] ||= {g:0,a:0,mins:0,cs:0,sv:0,y:0,rc:0,og:0,pts:0});
+      a.g+=e.g||0; a.a+=e.a||0; a.mins+=e.m||0; a.cs+=e.cs||0;
+      a.sv+=e.sv||0; a.y+=e.y||0; a.rc+=e.rc||0; a.og+=e.og||0; a.pts+=e.pts||0;
+    });
+    // ٢) النتيجة: أعلى goals_conceded بين لاعبي كل فريق = ما استقبله ذلك الفريق
+    const per={};
+    (S.live[r]||[]).forEach(e=>{
+      const pl=S.byPlayer[e.i]; if(!pl||!e.fx) return;
+      const k=e.fx+'|'+pl.team;
+      per[k]=Math.max(per[k]||0, e.gc||0);
+    });
+    Object.keys(per).forEach(k=>{
+      const [fx,team]=k.split('|').map(Number);
+      const f=fixtureById(fx); if(!f) return;
+      const s=(scores[fx] ||= {});
+      if(team===f.home) s.homeConceded=per[k];
+      else if(team===f.away) s.awayConceded=per[k];
+    });
+  });
+  S.liveStats=agg;
+  S.liveScores={};
+  Object.keys(scores).map(Number).forEach(fx=>{
+    const s=scores[fx];
+    // ما استقبله الضيف = أهداف المستضيف، والعكس
+    if(s.homeConceded!==undefined && s.awayConceded!==undefined)
+      S.liveScores[fx]={hs:s.awayConceded, as:s.homeConceded};
+  });
+}
+
+/* دمج أرقام الموسم في قائمة اللاعبين */
+function applyLiveToPlayers(){
+  const has=Object.keys(S.liveStats).length>0;
+  S.seasonLive=has;
+  S.players.forEach(p=>{
+    const a=S.liveStats[p.id];
+    if(has){
+      p.goals=a?a.g:0;   p.assists=a?a.a:0; p.mins=a?a.mins:0;
+      p.cs=a?a.cs:0;     p.saves=a?a.sv:0;  p.yc=a?a.y:0;
+      p.rc=a?a.rc:0;     p.pts=a?a.pts:0;
+    }
+  });
+  S.byPlayer={}; S.players.forEach(p=>S.byPlayer[p.id]=p);
+}
+
 async function fetchPreds(){
   if(!sb){S.preds=[];return;}
   const {data,error}=await sb.from('predictions').select('*').limit(5000);
@@ -829,7 +922,8 @@ async function loadAll(manual){
   try{
     const [fxRes] = await Promise.allSettled([fetchFixtures(), fetchPreds()]);
     if(fxRes.status==='rejected') throw fxRes.reason;
-    fetchBootstrap();                        // في الخلفية بلا انتظار
+    await fetchBootstrap();                  // نحتاج أسماء اللاعبين قبل تفكيك الجولات
+    syncLive();                              // أرقام الموسم والنتائج — في الخلفية
     applyManual();
     S.ready=true; if(!manual) S.viewRound=S.currentRound;
     paint();
@@ -937,7 +1031,8 @@ function renderMatches(){
   $('#matches').innerHTML=list.map(f=>{
     const live=f.started&&!f.finished, res=outcome(f), mine=myPred(f.id), all=predsOf(f.id);
     let mid;
-    if(f.finished) mid=`<div class="score g" style="${hasScore(f)?'':'font-size:.8rem'}">${scoreLine(f)}</div>${f.manual?'<div class="ko-d">نتيجة مُدخَلة يدوياً</div>':''}`;
+    if(f.finished) mid=`<div class="score g" style="${hasScore(f)?'':'font-size:.8rem'}">${scoreLine(f)}</div>`+
+      (f.src?`<div class="ko-d">${f.src==='مستنتَجة'?'نتيجة مستنتَجة من أرقام اللاعبين':(f.src==='يدوية'?'نتيجة مُدخَلة يدوياً':'من موقع الرابطة')}</div>`:'');
     else if(live)  mid=`<div class="score">${f.hs??0} - ${f.as??0}</div>`;
     else mid=`<div class="ko">${ksaTime(f.kickoff)}</div><div class="ko-d">${countdown(f.kickoff)}</div>`;
 
@@ -1016,7 +1111,7 @@ function renderPrev(){
          <span class="n">${all.length} توقع</span>`
       : `<span class="n">${all.length} توقع · لم تُحتسب بعد</span>`;
     return `<div class="prevcard" onclick="openMatch(${f.id})">
-      <div class="top"><span>${roundName(f.round)}</span><span>${ksaDate(f.kickoff)}</span></div>
+      <div class="top"><span>${roundName(f.round)}${f.src?' · '+f.src:''}</span><span>${ksaDate(f.kickoff)}</span></div>
       <div class="mid">
         <div class="nm">${crest(f.home)}<span>${tName(f.home)}</span></div>
         ${mid}
@@ -1071,7 +1166,7 @@ function starsMode(m){S.starsMode=m;
   renderStars();}
 function toggleOld(){ S.showOld=!S.showOld; renderStars(); }
 function renderStars(){
-  const seasonStarted=S.fixtures.some(f=>outcome(f));
+  const seasonStarted=!!S.seasonLive || S.fixtures.some(f=>outcome(f));
   if(S.players.length && !seasonStarted && !S.showOld){
     $('#starsNote').textContent='لم يبدأ الرصد';
     $('#starsTbl').innerHTML=`<tbody><tr><td style="padding:24px;line-height:2">
@@ -1975,7 +2070,7 @@ function refreshAdmin(){
     const ok=all.filter(p=>sideOf(f,p.prediction)===res).length;
     const pc=all.length?Math.round(ok/all.length*100):0;
     return `<div class="pitem"><span class="who">ج${f.round} ${tName(f.home)} × ${tName(f.away)}</span>
-      <span class="pts">${scoreLine(f)}</span><span class="tag ok">✅ ${ok}</span>
+      <span class="pts">${scoreLine(f)}</span>${f.src?`<span class="tag hid">${f.src}</span>`:''}<span class="tag ok">✅ ${ok}</span>
       <span class="tag no">❌ ${all.length-ok}</span><span class="tag hid">${pc}%</span></div>`;}).join('')
     :`<div class="empty"><span>📭</span> لا مباريات منتهية</div>`;
   const stale=staleRows();
@@ -2196,7 +2291,7 @@ setInterval(()=>{if(S.ready)loadAll();},300000);
 Object.assign(window,{openPick,openMatch,openPlayer,loadAll,hide,starsMode,boardTab,
   renderCompare,adminTab,adminSave,adminDelete,adminLoadPred,fillPlayers,lockAdmin,toggleTheme,
   resLoad,resSave,resDelete,staleDeleteAll,staleCopy,goPick,shareCard,exportCSV,renderMe,paint,toggleOld,
-  renderNews,renderSearch,renderCards,openClubCards,openBulk,setBulk,shareLink});
+  renderNews,renderSearch,renderCards,openClubCards,openBulk,setBulk,shareLink,syncLive,fetchLive});
 </script>
 </body>
 </html>
