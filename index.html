@@ -436,6 +436,7 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
     <button class="tab" data-p="table">📊 الترتيب</button>
     <button class="tab" data-p="news">📰 أخبار الجولة</button>
     <button class="tab" data-p="stars">🏅 الأرقام</button>
+    <button class="tab" data-p="cards">🟨 الإيقافات</button>
     <button class="tab" data-p="teams">📈 إحصائيات الفرق</button>
     <button class="tab" data-p="board">🏆 المتصدرون</button>
   </div>
@@ -478,9 +479,28 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
       <button class="btn" id="sbA" onclick="starsMode('a')">🅰️ الصناعة</button>
       <button class="btn" id="sbC" onclick="starsMode('c')">🟨 البطاقات</button>
       <button class="btn" id="sbK" onclick="starsMode('k')">🧤 الحراس</button>
-      <button class="btn" id="sbS" onclick="starsMode('s')">🔥 الأكثر اختياراً</button>
+      <button class="btn" id="sbN" onclick="starsMode('n')">🏟️ بطاقات الأندية</button>
     </div>
-    <div class="tbl-wrap"><table id="starsTbl"></table></div>
+    <div style="margin:12px 0 10px">
+      <input type="search" id="pSearch" placeholder="🔎 ابحث عن لاعب بالاسم…" oninput="renderSearch()" />
+    </div>
+    <div id="searchOut"></div>
+    <div class="tbl-wrap" id="starsBox"><table id="starsTbl"></table></div>
+  </section>
+
+  <section class="panel" id="p-cards">
+    <div class="sec-title">🟨 الإنذارات والإيقافات <span class="pill" id="cardsNote">—</span></div>
+    <div id="cardsWrap"></div>
+    <div class="lockmsg" style="text-align:right;margin-top:16px;line-height:2">
+      <b style="color:var(--brand)">قواعد التراكم</b><br>
+      🟨 أربع بطاقات صفراء ← إيقاف مباراة واحدة، ثم يعود في التي تليها ويُصفَّر العدّاد.<br>
+      🟥 حمراء بإنذارين ← إيقاف مباراة واحدة، ثم يعود في التي تليها.<br>
+      🟥 حمراء مباشرة ← تحددها لجنة الانضباط وقد تتجاوز مباراة واحدة.<br>
+      ⚠️ مع أي عقوبة إضافية لا يعود اللاعب قبل انقضاء كامل مدة الإيقاف.
+      <div style="margin-top:8px;color:var(--ink-3);font-size:.6rem">
+        المصدر يوفّر الإجمالي التراكمي فقط دون تواريخ البطاقات، لذا تُحسب الدورة الحالية بباقي القسمة على أربعة.
+        حالة الإيقاف المؤكدة تُقرأ من الإعلان الرسمي في حقل الأخبار.</div>
+    </div>
   </section>
 
   <section class="panel" id="p-teams">
@@ -720,7 +740,7 @@ async function fetchBootstrap(){
       chance_of_playing_next_round:e.chance_of_playing_next_round,
       selected_by_percent:e.selected_by_percent,now_cost:e.now_cost,
       cost_change_event:e.cost_change_event,ep_next:e.ep_next}))});
-    mapBootstrap(b); renderStars(); renderNews(); renderTeams(); renderMatches(); renderRemind();
+    mapBootstrap(b); renderStars(); renderNews(); renderCards(); renderTeams(); renderMatches(); renderRemind();
   }catch(e){ console.warn('تعذّر جلب بيانات اللاعبين',e); }
 }
 async function fetchPreds(){
@@ -758,7 +778,7 @@ function applyManual(){
 function paint(){
   refreshFinished();
   renderRounds();renderMatches();renderRemind();renderMe();renderPrev();
-  renderTable();renderStars();renderNews();renderTeams();renderBoard();
+  renderTable();renderStars();renderNews();renderCards();renderTeams();renderBoard();
   $('#roundBadge').textContent=roundName(S.currentRound);
   const live=S.fixtures.filter(f=>f.started&&!f.finished).length;
   $('#liveStat').textContent=live?`🔴 ${live} مباراة الآن`:`${S.fixtures.filter(f=>f.finished).length} مباراة منتهية`;
@@ -1001,13 +1021,11 @@ const STAR_MODES={
   a:{t:'🅰️ صنّاع اللعب', k:'assists', c:['صناعة','أهداف','دقائق'], f:p=>[p.assists,p.goals,p.mins]},
   c:{t:'🟨 البطاقات', k:'cards', c:['🟨','🟥','دقائق'], f:p=>[p.yc,p.rc,p.mins]},
   k:{t:'🧤 الحراس', k:'saves', c:['تصديات','شباك نظيفة','استقبل'], f:p=>[p.saves,p.cs,p.gc]},
-  s:{t:'🔥 الأكثر اختياراً', k:'selpc', c:['نسبة الاختيار','السعر','التغيّر'],
-     f:p=>[p.selpc+'%', p.cost.toFixed(1), (p.chg>0?'+':'')+p.chg.toFixed(1)]}
+  n:{t:'🏟️ بطاقات الأندية', k:'club', c:['🟨 صفراء','🟥 حمراء','مجموع'], f:null}
 };
 function starsMode(m){S.starsMode=m;
-  ({g:'sbG',a:'sbA',c:'sbC',k:'sbK',s:'sbS'});
-  ['g','a','c','k','s'].forEach(x=>{
-    const b=document.getElementById({g:'sbG',a:'sbA',c:'sbC',k:'sbK',s:'sbS'}[x]);
+  ['g','a','c','k','n'].forEach(x=>{
+    const b=document.getElementById({g:'sbG',a:'sbA',c:'sbC',k:'sbK',n:'sbN'}[x]);
     if(b) b.className='btn'+(x===m?' solid':'');});
   renderStars();}
 function toggleOld(){ S.showOld=!S.showOld; renderStars(); }
@@ -1027,6 +1045,23 @@ function renderStars(){
   if(!S.players.length){$('#starsNote').textContent='غير متاح';
     $('#starsTbl').innerHTML=`<tbody><tr><td style="padding:26px">تعذّر جلب بيانات اللاعبين</td></tr></tbody>`;return;}
   const M=STAR_MODES[S.starsMode]||STAR_MODES.g;
+
+  if(S.starsMode==='n'){                       // بطاقات الأندية
+    const cc=clubCards();
+    $('#starsNote').textContent=`${cc.reduce((s,c)=>s+c.y,0)} إنذاراً · ${cc.reduce((s,c)=>s+c.r,0)} طرداً`;
+    $('#starsTbl').innerHTML=`<thead><tr><th>#</th><th style="text-align:right">النادي</th>
+      <th>🟨</th><th>🟥</th><th>المجموع</th><th>اللاعبون</th><th></th></tr></thead>
+      <tbody>${cc.map((c,i)=>`<tr onclick="openClubCards(${c.id})"
+        style="cursor:pointer" title="اضغط لعرض جميع اللاعبين">
+        <td>${i+1}</td>
+        <td class="team"><div class="in">${crest(c.id)}<span>${tName(c.id)}</span></div></td>
+        <td class="pts">${c.y}</td><td style="color:var(--lose)">${c.r||''}</td><td>${c.y+c.r}</td>
+        <td>${c.list.length||'—'}</td>
+        <td style="color:var(--brand);font-size:.6rem">${c.list.length?'عرض ›':''}</td>
+      </tr>`).join('')}</tbody>`;
+    return;
+  }
+
   let pool=S.players;
   if(S.starsMode==='k') pool=pool.filter(p=>p.pos===1);
   const val=p=>M.k==='cards'?(p.rc*10+p.yc):p[M.k];
@@ -1273,6 +1308,146 @@ function goPick(fid){
   S.viewRound=f.round; renderRounds(); renderMatches(); openPick(fid);
 }
 
+function renderCards(){
+  const w=$('#cardsWrap'); if(!w) return;
+  if(!S.players.length){ w.innerHTML=`<div class="empty"><span>⏳</span> جارٍ التحميل…</div>`; return; }
+  const all=S.players.map(p=>({p,c:cardStatus(p)}));
+  const susp=all.filter(x=>x.c.suspended);
+  const risk=all.filter(x=>x.c.risk&&!x.c.suspended).sort((a,b)=>b.p.selpc-a.p.selpc);
+  const carded=all.filter(x=>x.c.y>0||x.c.r>0).sort((a,b)=>(b.c.y+b.c.r*4)-(a.c.y+a.c.r*4));
+  const ty=all.reduce((s,x)=>s+x.c.y,0), tr=all.reduce((s,x)=>s+x.c.r,0);
+  $('#cardsNote').textContent=`${ty} إنذاراً · ${tr} طرداً`;
+
+  const st=[['🚫 موقوفون',susp.length],['⚠️ على الحافة',risk.length],
+            ['🟨 إجمالي الإنذارات',ty],['🟥 إجمالي الطرد',tr]];
+  const cardsOf=(arr,cls,extra)=>arr.length?`<div class="melist">${arr.slice(0,40).map(x=>`
+      <div class="merow ${cls}">
+        <span class="mt">${x.p.name} <span style="color:var(--ink-3);font-size:.6rem">${tName(x.p.team)}</span></span>
+        ${extra(x)}</div>`).join('')}</div>`
+    : `<div class="empty" style="padding:20px"><span>✅</span> لا أحد حالياً</div>`;
+
+  w.innerHTML=`<div class="mestats">${st.map(([l,v])=>
+      `<div class="b"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('')}</div>
+
+    <div class="sec-title" style="font-size:.85rem">🚫 موقوفون عن الجولة القادمة</div>
+    ${cardsOf(susp,'miss',x=>`<span style="flex:2;min-width:140px;font-size:.62rem;color:var(--ink-2)">${x.p.news||'—'}</span>
+       <span class="tag no">موقوف</span>`)}
+
+    <div class="sec-title" style="font-size:.85rem;margin-top:16px">⚠️ على حافة الإيقاف</div>
+    <p style="font-size:.62rem;color:var(--ink-3);margin-bottom:8px">إنذار واحد إضافي يوقفهم مباراة</p>
+    ${cardsOf(risk,'miss',x=>`<span class="tag" style="background:var(--draw);color:#04150d">🟨 ${x.c.y}</span>
+       <span class="tag no">باقٍ إنذار واحد</span>`)}
+
+    <div class="sec-title" style="font-size:.85rem;margin-top:16px">📋 سجل البطاقات</div>
+    <div class="tbl-wrap"><table><thead><tr><th>#</th><th style="text-align:right">اللاعب</th>
+      <th style="text-align:right">النادي</th><th>🟨</th><th>🟥</th><th>الدورة</th><th>للإيقاف</th></tr></thead>
+      <tbody>${carded.slice(0,60).map((x,i)=>`<tr>
+        <td>${i+1}</td><td class="team">${x.p.name}</td>
+        <td class="team"><div class="in">${crest(x.p.team)}<span>${tName(x.p.team)}</span></div></td>
+        <td class="pts">${x.c.y}</td><td style="color:var(--lose)">${x.c.r||''}</td>
+        <td>${x.c.cycle}/4</td>
+        <td style="${x.c.risk?'color:var(--draw);font-weight:900':''}">${x.c.suspended?'موقوف':x.c.toBan}</td>
+      </tr>`).join('')||'<tr><td style="padding:24px;color:var(--ink-3)">لم تُسجَّل بطاقات بعد</td></tr>'}</tbody></table></div>`;
+}
+
+/* بطاقة إحصاءات لاعب واحد */
+function playerCard(p){
+  const c=cardStatus(p);
+  const st = c.suspended ? '<span class="tag no">موقوف</span>'
+    : (p.chance===0 ? '<span class="tag no">غير متاح</span>'
+    : (c.doubtful ? `<span class="tag wait">جاهزية ${p.chance}%</span>`
+    : '<span class="tag ok">جاهز</span>'));
+  const POS={1:'حارس',2:'مدافع',3:'وسط',4:'مهاجم'};
+  const rows=[['⚽ أهداف',p.goals],['🅰️ صناعة',p.assists],['⏱️ دقائق',p.mins],
+    ['🟨 إنذارات',p.yc],['🟥 طرد',p.rc],['🧤 شباك نظيفة',p.cs],
+    ['🧤 تصديات',p.saves],['🥅 استقبل',p.gc],['⭐ نقاط',p.pts],
+    ['💰 السعر',p.cost.toFixed(1)+'م'],['📈 متوقع',p.ep],['👥 اختير',p.selpc+'%']];
+  const warn = c.suspended
+    ? `<div class="lockmsg" style="border-color:var(--lose);color:var(--lose)">🚫 موقوف حالياً — ${p.news||'قرار إيقاف'}</div>`
+    : (c.risk ? `<div class="lockmsg" style="border-color:var(--draw);color:var(--draw)">
+        ⚠️ على حافة الإيقاف — إنذار واحد في الجولة القادمة يوقفه مباراة</div>`
+    : (p.news ? `<div class="lockmsg">📰 ${p.news}</div>` : ''));
+  return `<div class="mecard" style="margin-bottom:10px;flex-direction:column;align-items:stretch">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      ${crest(p.team)}
+      <div class="who"><h3>${p.name}</h3>
+        <div style="font-size:.64rem;color:var(--ink-2)">${tName(p.team)} · ${POS[p.pos]||''}</div></div>
+      ${st}
+    </div>
+    ${warn}
+    <div class="mestats" style="margin:12px 0 0">
+      ${rows.map(([l,v])=>`<div class="b"><div class="v" style="font-size:.95rem">${v}</div><div class="l">${l}</div></div>`).join('')}
+    </div>
+    <div style="margin-top:10px;font-size:.63rem;color:var(--ink-2);line-height:1.9">
+      🟨 دورة الإنذارات الحالية: <b>${c.cycle} من ${CARD_LIMIT}</b> —
+      ${c.risk?'<b style="color:var(--draw)">إنذار واحد يفصله عن الإيقاف</b>'
+        :`يفصله <b>${c.toBan}</b> ${c.toBan===1?'إنذار':'إنذارات'} عن الإيقاف`}
+      ${c.served?` · سبق أن أُوقف <b>${c.served}</b> ${c.served===1?'مرة':'مرات'} بالتراكم`:''}
+    </div></div>`;
+}
+function renderSearch(){
+  const q=($('#pSearch')?.value||'').trim();
+  const out=$('#searchOut'), box=$('#starsBox');
+  if(!q){ out.innerHTML=''; box.style.display=''; return; }
+  box.style.display='none';
+  const hits=S.players.filter(p=>p.name.includes(q)||tName(p.team).includes(q))
+    .sort((a,b)=>b.pts-a.pts).slice(0,8);
+  out.innerHTML = hits.length ? hits.map(playerCard).join('')
+    : `<div class="empty"><span>🔎</span> لا لاعب بهذا الاسم</div>`;
+}
+
+/* ===== نظام الإنذارات والإيقافات =====
+   قاعدة الدوري: كل 4 إنذارات = إيقاف مباراة واحدة، ثم يُصفَّر العدّاد.
+   المصدر يعطي الإجمالي التراكمي فقط (لا تواريخ البطاقات)، لذلك:
+   • دورة الإنذارات الحالية = الإجمالي ÷ 4 (الباقي)
+   • حالة الإيقاف الفعلية تُقرأ من حقلي news و chance لأنهما المصدر الرسمي  */
+const CARD_LIMIT=4;
+const SUSP_RE=/(إيقاف|موقوف|معلق|suspend|ban)/i;
+function cardStatus(p){
+  const y=+p.yc||0, r=+p.rc||0;
+  const cycle=y%CARD_LIMIT;
+  const toBan=CARD_LIMIT-cycle;
+  const served=Math.floor(y/CARD_LIMIT);
+  const suspended = (p.chance===0) && SUSP_RE.test(p.news||'');
+  const doubtful  = p.chance>0 && p.chance<100;
+  return {y,r,cycle,toBan,served,suspended,doubtful,
+    risk: y>0 && cycle===CARD_LIMIT-1};
+}
+function clubCards(){
+  const m={};
+  Object.keys(TEAMS).map(Number).forEach(id=>m[id]={id,y:0,r:0,list:[]});
+  S.players.forEach(p=>{
+    const t=m[p.team]; if(!t) return;
+    const y=+p.yc||0, r=+p.rc||0;
+    t.y+=y; t.r+=r;
+    if(y>0||r>0) t.list.push(p);
+  });
+  Object.values(m).forEach(t=>t.list.sort((a,b)=>(b.rc*4+b.yc)-(a.rc*4+a.yc)));
+  return Object.values(m).sort((a,b)=>(b.y+b.r*3)-(a.y+a.r*3));
+}
+
+/* كل لاعبي نادٍ ممن نالوا بطاقات */
+function openClubCards(id){
+  const list=S.players.filter(p=>p.team===id&&((+p.yc||0)>0||(+p.rc||0)>0))
+    .sort((a,b)=>(b.rc*4+b.yc)-(a.rc*4+a.yc));
+  const y=list.reduce((s,p)=>s+(+p.yc||0),0), r=list.reduce((s,p)=>s+(+p.rc||0),0);
+  $('#plTitle').textContent='🟨 بطاقات '+tName(id);
+  $('#plLead').textContent = list.length
+    ? `${y} إنذاراً · ${r} طرداً · ${list.length} لاعباً`
+    : 'لم يُنَل أي لاعب بطاقة بعد';
+  $('#plList').innerHTML = list.length ? list.map(p=>{
+    const c=cardStatus(p);
+    const tag = c.suspended ? '<span class="tag no">موقوف</span>'
+      : (c.risk ? '<span class="tag" style="background:var(--draw);color:#04150d">باقٍ إنذار واحد</span>'
+      : `<span class="tag hid">${c.toBan} للإيقاف</span>`);
+    return `<div class="pitem ${c.risk||c.suspended?'wrong':''}">
+      <span class="who">${p.name}</span>
+      <span style="color:var(--ink-2)">🟨 ${p.yc}${p.rc?' · 🟥 '+p.rc:''}</span>
+      <span style="color:var(--ink-3);font-size:.58rem">الدورة ${c.cycle}/4</span>${tag}</div>`;
+  }).join('') : `<div class="empty"><span>✅</span> لا بطاقات على هذا النادي</div>`;
+  show('#vPlayer');
+}
+
 /* ===== ٢ + ٧) أخبار الجولة: الإقفال · الغيابات · نجوم الجولة ===== */
 function renderNews(){
   const w=$('#newsWrap'); if(!w) return;
@@ -1298,22 +1473,18 @@ function renderNews(){
        </div>`).join('')}</div>`
     : `<div class="empty" style="padding:22px"><span>✅</span> لا غيابات أو إصابات معلنة حالياً</div>`;
 
-  const ev=S.events.filter(e=>e.finished||e.top).slice().reverse();
-  const stars = ev.length ? `<div class="sec-title" style="font-size:.85rem;margin-top:16px">⭐ نجوم الجولات</div>
-    <div class="champs">${ev.slice(0,8).map(e=>{
-      const pl=e.top?S.byPlayer[e.top.id]:null;
-      return `<div class="chip"><span class="k">${e.top?e.top.points:'—'}</span><span class="t">
-        <span class="a">${pl?pl.name:'—'}</span>
-        <span class="b">${roundName(e.id)} · أعلى نقاط ${e.high??'—'} · المعدل ${e.avg??'—'}</span></span></div>`;
-    }).join('')}</div>` : '';
-
-  const hot=[...S.players].sort((a,b)=>b.selpc-a.selpc).slice(0,6);
-  const hotHtml=`<div class="sec-title" style="font-size:.85rem;margin-top:16px">🔥 الأكثر اختياراً بين المشاركين</div>
-    <div class="champs">${hot.map(p=>`<div class="chip">
-      <span class="k" style="font-size:.6rem">${p.selpc}%</span><span class="t">
-      <span class="a">${p.name}</span><span class="b">${tName(p.team)} · ${p.cost.toFixed(1)}م</span></span></div>`).join('')}</div>`;
-
-  w.innerHTML=head+injury+stars+hotHtml;
+  // من هم على حافة الإيقاف في هذه الجولة
+  const edge=S.players.map(p=>({p,c:cardStatus(p)})).filter(x=>x.c.risk&&!x.c.suspended)
+    .sort((a,b)=>b.p.selpc-a.p.selpc);
+  const edgeHtml = edge.length
+    ? `<div class="sec-title" style="font-size:.85rem;margin-top:16px">⚠️ على حافة الإيقاف</div>
+       <p style="font-size:.62rem;color:var(--ink-3);margin-bottom:8px">إنذار واحد في هذه الجولة يوقفهم عن المباراة التالية</p>
+       <div class="melist">${edge.slice(0,30).map(x=>`<div class="merow miss">
+         <span class="mt">${x.p.name} <span style="color:var(--ink-3);font-size:.6rem">${tName(x.p.team)}</span></span>
+         <span class="tag" style="background:var(--draw);color:#04150d">🟨 ${x.c.y} إنذاراً</span>
+         <span class="tag no">إنذار واحد للإيقاف</span></div>`).join('')}</div>`
+    : '';
+  w.innerHTML=head+injury+edgeHtml;
 }
 
 /* ===== 4) بطل كل جولة ===== */
@@ -1836,7 +2007,8 @@ setInterval(()=>{if(S.ready)loadAll();},300000);
 
 Object.assign(window,{openPick,openMatch,openPlayer,loadAll,hide,starsMode,boardTab,
   renderCompare,adminTab,adminSave,adminDelete,adminLoadPred,fillPlayers,lockAdmin,toggleTheme,
-  resLoad,resSave,resDelete,staleDeleteAll,staleCopy,goPick,shareCard,exportCSV,renderMe,paint,toggleOld,renderNews});
+  resLoad,resSave,resDelete,staleDeleteAll,staleCopy,goPick,shareCard,exportCSV,renderMe,paint,toggleOld,
+  renderNews,renderSearch,renderCards,openClubCards});
 </script>
 </body>
 </html>
