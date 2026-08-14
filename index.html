@@ -1348,10 +1348,9 @@ function renderRemind(){
   else if(hh<24) txt=`يُقفل أول توقع بعد ${hh} ساعة و${mm} دقيقة`;
   else txt=`يُقفل أول توقع بعد ${Math.floor(hh/24)} يوم`;
   el.className='remind on';
-  const dl=deadlineText(S.currentRound);
   el.innerHTML=`<span class="em">⏰</span><span class="txt">
     بقيت <b>${miss.length}</b> ${miss.length===1?'مباراة لم تتوقعها':'مباريات لم تتوقعها'} في ${roundName(S.currentRound)}
-    <small>${txt}${dl?' · '+dl:''}</small></span>
+    <small>${txt} · كل مباراة تُقفل وحدها قبل صافرتها بخمس دقائق</small></span>
     <button class="btn solid" onclick="goPick(${miss[0].id})">توقع الآن</button>`;
 }
 function goPick(fid){
@@ -1518,8 +1517,7 @@ function openBulk(){
   bulkPick={};
   open.forEach(f=>{const m=myPred(f.id); if(m) bulkPick[f.id]=sideOf(f,m.prediction);});
   $('#bulkTitle').textContent=roundName(S.currentRound);
-  const dl=deadlineText(S.currentRound);
-  $('#bulkLead').textContent=`${open.length} مباراة متاحة${dl?' · '+dl:''}`;
+  $('#bulkLead').textContent=`${open.length} مباراة متاحة للتوقع الآن`;
   $('#bulkList').innerHTML=open.map(f=>`<div class="brow" data-f="${f.id}">
       <div class="bt"><span>${ksaDate(f.kickoff)} · ${ksaTime(f.kickoff)}</span>
         <span>${myPred(f.id)?'توقعت سابقاً':''}</span></div>
@@ -1599,11 +1597,25 @@ function renderNews(){
     $('#newsNote').textContent='—';
     w.innerHTML=`<div class="empty"><span>⏳</span> جارٍ تحميل بيانات اللاعبين…</div>`; return; }
 
+  // آخر مباراة في الجولة = آخر فرصة للتوقع في تطبيقنا
+  const fx=(S.byRound[S.currentRound]||[]).filter(f=>!hasEnded(f));
+  const last=fx.length?fx[fx.length-1]:null;
+  const lastTxt = last
+    ? `آخر فرصة للتوقع: ${tName(last.home)} × ${tName(last.away)} — ${ksaDate(last.kickoff)} ${ksaTime(last.kickoff)}`
+    : 'انتهت كل مباريات الجولة';
   const dl=deadlineText(S.currentRound);
-  const head=`<div class="mecard" style="margin-bottom:12px">
-    <div style="font-size:1.6rem">⏰</div>
-    <div class="who"><h3>${roundName(S.currentRound)}</h3>
-      <div style="font-size:.66rem;color:var(--ink-2)">${dl||'لم يُعلن موعد الإقفال الرسمي'}</div></div></div>`;
+  const head=`<div class="mecard" style="margin-bottom:12px;flex-direction:column;align-items:stretch">
+    <div style="display:flex;align-items:center;gap:12px">
+      <div style="font-size:1.6rem">⏰</div>
+      <div class="who"><h3>${roundName(S.currentRound)}</h3>
+        <div style="font-size:.66rem;color:var(--ink-2)">${lastTxt}</div></div></div>
+    <div class="lockmsg" style="margin-top:10px;text-align:right">
+      ⚽ في هذا التطبيق تُقفل <b>كل مباراة على حدة</b> قبل صافرتها بخمس دقائق، فتستطيع التوقع على مباريات
+      الجولة حتى لحظة انطلاق كل واحدة منها.
+      ${dl?`<div style="margin-top:6px;color:var(--ink-3);font-size:.6rem">
+        للعلم فقط: لعبة فانتازي روشن الرسمية تُقفل تشكيلاتها قبل أول مباراة —
+        ${dl.replace('الإقفال الرسمي: ','')}. لا علاقة لذلك بتوقعاتك هنا.</div>`:''}
+    </div></div>`;
 
   const out=S.players.filter(p=>p.chance<100||p.news).sort((a,b)=>a.chance-b.chance||b.selpc-a.selpc);
   $('#newsNote').textContent = out.length?`${out.length} حالة غياب أو شك`:'لا غيابات معلنة';
