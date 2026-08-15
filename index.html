@@ -328,6 +328,21 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
 .chip .t .a{font-size:.7rem;font-weight:800}
 .chip .t .b{font-size:.55rem;color:var(--ink-3);font-weight:700}
 
+/* تبويبات داخل نافذة المباراة */
+.mtabs{display:flex;gap:5px;background:var(--surface);padding:4px;border-radius:40px;
+  border:1px solid var(--line);margin-bottom:12px}
+.mtab{flex:1;padding:8px 10px;border:none;border-radius:40px;background:transparent;
+  color:var(--ink-2);font-size:.68rem;font-weight:800;cursor:pointer;font-family:inherit;transition:all .2s}
+.mtab:hover{color:var(--ink)}
+.mtab.on{background:var(--brand-soft);color:var(--brand);box-shadow:inset 0 0 0 1px var(--line-b)}
+.mpane{display:none;max-height:340px;overflow-y:auto;flex-direction:column;gap:6px}
+.mpane.on{display:flex}
+.evrow{background:var(--surface);border:1px solid var(--line);border-radius:11px;
+  padding:9px 12px;display:flex;align-items:center;gap:10px;font-size:.68rem;flex-wrap:wrap}
+.evrow .lbl{font-weight:800;white-space:nowrap}
+.evrow .who2{flex:1;font-weight:800;min-width:110px}
+.evrow .tm{font-size:.58rem;color:var(--ink-3)}
+
 /* المباريات السابقة */
 .prev{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
 .prevcard{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:13px 15px;
@@ -1976,12 +1991,16 @@ function openMatch(fid){
         ? `${roundName(f.round)} · انتهت · بانتظار اعتماد النتيجة · ${all.length} متسابق`
         : `${roundName(f.round)} · ${ksaDate(f.kickoff)} · ${all.length} متسابق · التوقعات مخفية حتى انتهاء المباراة`);
   const ev=matchEvents(f);
-  const evHtml = ev.length ? `<div class="pitem" style="flex-direction:column;align-items:stretch;gap:5px">
-      <b style="font-size:.66rem;color:var(--brand)">📊 أحداث المباراة</b>
-      ${ev.map(e=>`<span style="font-size:.63rem">${e.label} — <b>${e.name}</b>
-        <span style="color:var(--ink-3)">(${tName(e.team)})</span>${e.v>1?' ×'+e.v:''}</span>`).join('')}
-    </div>` : '';
-  $('#mpList').innerHTML=evHtml+(all.length?all.map(p=>{
+  const evHtml = ev.length
+    ? ev.map(e=>`<div class="evrow">
+        <span class="lbl">${e.label}</span>
+        <span class="who2">${e.name}</span>
+        <span class="tm">${tName(e.team)}</span>
+        ${e.v>1?`<span class="tag hid">×${e.v}</span>`:''}</div>`).join('')
+    : `<div class="empty" style="padding:26px"><span>📊</span> لم تصل أحداث هذه المباراة
+        <br><small>تظهر تلقائياً متى رصدها المصدر</small></div>`;
+
+  const predHtml = (all.length?all.map(p=>{
     const isMe=p.user_name===S.me; let val,tag,cls='';
     if(reveal){
       const side=sideOf(f,p.prediction), right=side===res;
@@ -1996,8 +2015,24 @@ function openMatch(fid){
       <span class="who" style="cursor:pointer" onclick="hide('#vMatch');openPlayer('${esc(p.user_name)}')">${p.user_name}</span>
       <span style="color:var(--ink-2)">${val}</span>${tag}</div>`;
   }).join('') : `<div class="empty"><span>📭</span> لا توقعات بعد</div>`);
+
+  const showEv = reveal;                       // الأحداث تظهر بعد انتهاء المباراة فقط
+  $('#mpList').style.display='block';
+  $('#mpList').style.maxHeight='none';
+  $('#mpList').innerHTML = (showEv?`<div class="mtabs">
+      <button class="mtab on" data-m="ev" onclick="mpTab('ev')">📊 أحداث المباراة</button>
+      <button class="mtab" data-m="pr" onclick="mpTab('pr')">🗳️ التوقعات (${all.length})</button>
+    </div>`:'')
+    + (showEv?`<div class="mpane on" id="mp-ev">${evHtml}</div>`:'')
+    + `<div class="mpane ${showEv?'':'on'}" id="mp-pr">${predHtml}</div>`;
   show('#vMatch');
 }
+function mpTab(k){
+  document.querySelectorAll('#mpList .mtab').forEach(b=>b.classList.toggle('on',b.dataset.m===k));
+  document.querySelectorAll('#mpList .mpane').forEach(el=>
+    el.classList.toggle('on', el.id==='mp-'+k));
+}
+
 function openPlayer(name){
   const b=scoreboard(),u=b.find(x=>x.name===name);
   const list=latest(S.preds.filter(p=>p.user_name===name))
@@ -2291,7 +2326,7 @@ setInterval(()=>{if(S.ready)loadAll();},300000);
 Object.assign(window,{openPick,openMatch,openPlayer,loadAll,hide,starsMode,boardTab,
   renderCompare,adminTab,adminSave,adminDelete,adminLoadPred,fillPlayers,lockAdmin,toggleTheme,
   resLoad,resSave,resDelete,staleDeleteAll,staleCopy,goPick,shareCard,exportCSV,renderMe,paint,toggleOld,
-  renderNews,renderSearch,renderCards,openClubCards,openBulk,setBulk,shareLink,syncLive,fetchLive});
+  renderNews,renderSearch,renderCards,openClubCards,openBulk,setBulk,shareLink,syncLive,fetchLive,mpTab});
 </script>
 </body>
 </html>
