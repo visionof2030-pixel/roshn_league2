@@ -328,6 +328,31 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
 .chip .t .a{font-size:.7rem;font-weight:800}
 .chip .t .b{font-size:.55rem;color:var(--ink-3);font-weight:700}
 
+/* الإرشاد اللحظي */
+.coach-ring{position:fixed;border-radius:44px;pointer-events:none;z-index:9997;
+  box-shadow:0 0 0 3px var(--brand),0 0 0 9999px rgba(4,14,24,.55);
+  animation:coachPulse 1.7s infinite;transition:all .3s cubic-bezier(.4,0,.2,1)}
+@keyframes coachPulse{
+  0%{box-shadow:0 0 0 3px var(--brand),0 0 0 0 rgba(0,180,146,.55),0 0 0 9999px rgba(4,14,24,.55)}
+  70%{box-shadow:0 0 0 3px var(--brand),0 0 0 16px rgba(0,180,146,0),0 0 0 9999px rgba(4,14,24,.55)}
+  100%{box-shadow:0 0 0 3px var(--brand),0 0 0 0 rgba(0,180,146,0),0 0 0 9999px rgba(4,14,24,.55)}}
+.coach-tip{position:fixed;z-index:9998;max-width:270px;background:var(--bg-2);
+  border:1px solid var(--brand);border-radius:16px;padding:12px 14px;
+  box-shadow:0 18px 50px rgba(0,0,0,.5);animation:tipIn .35s ease}
+@keyframes tipIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.coach-tip .ct{font-size:.76rem;font-weight:900;color:var(--brand);margin-bottom:2px}
+.coach-tip .cs{font-size:.64rem;color:var(--ink-2);line-height:1.75}
+.coach-tip .cf{display:flex;justify-content:space-between;align-items:center;margin-top:9px}
+.coach-tip .dots{display:flex;gap:4px}
+.coach-tip .dots i{width:6px;height:6px;border-radius:50%;background:var(--line-b);display:block}
+.coach-tip .dots i.on{background:var(--brand)}
+.coach-tip .skip{background:none;border:none;color:var(--ink-3);font-size:.6rem;
+  font-weight:700;cursor:pointer;font-family:inherit;padding:2px 6px}
+.coach-tip .skip:hover{color:var(--lose)}
+.coach-arrow{position:fixed;z-index:9998;width:0;height:0;
+  border-left:9px solid transparent;border-right:9px solid transparent;
+  border-bottom:9px solid var(--brand)}
+
 /* نافذة التسجيل */
 .namewarn{display:none;background:rgba(240,180,41,.13);border:1px solid rgba(240,180,41,.42);
   border-radius:14px;padding:11px 13px;margin-top:11px;font-size:.68rem;line-height:1.9;text-align:right}
@@ -621,23 +646,6 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
   <button class="btn solid" style="width:100%;justify-content:center;margin-top:12px;padding:13px" id="nameGo">متابعة</button>
   <div class="whoisin" id="whoIsIn"></div></div></div>
 
-<div class="veil" id="vWelcome"><div class="box"><button class="x" data-close>✕</button>
-  <div class="welc">
-    <div class="logo">🟢</div>
-    <h2>أهلاً بك</h2>
-    <p class="lead">توقّع نتائج دوري روشن ونافس زملاءك</p>
-  </div>
-  <div class="steps">
-    <div class="step"><span class="num">١</span><span class="tx">اكتب اسمك
-      <small>يُحفظ في جهازك ولا تحتاج كتابته مرة أخرى</small></span></div>
-    <div class="step"><span class="num">٢</span><span class="tx">اضغط «⚡ توقع الجولة كاملة»
-      <small>اختر الفائز أو التعادل لكل مباراة في شاشة واحدة</small></span></div>
-    <div class="step"><span class="num">٣</span><span class="tx">تابع ترتيبك في «🏆 المتصدرون»
-      <small>كل توقع صحيح = نقطة · التوقعات مخفية حتى انتهاء المباراة</small></span></div>
-  </div>
-  <button class="btn solid" style="width:100%;justify-content:center;padding:13px" onclick="startNow()">لنبدأ</button>
-</div></div>
-
 <div class="veil" id="vPick"><div class="box"><button class="x" data-close>✕</button>
   <h2 id="pickTitle">توقّع النتيجة</h2><p class="lead" id="pickWhen"></p>
   <div class="opts" id="pickOpts"></div>
@@ -665,6 +673,10 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
   <input type="password" id="pwIn" maxlength="12" placeholder="••••" style="text-align:center;letter-spacing:6px" />
   <div class="note" id="pwNote"></div>
   <button class="btn solid" style="width:100%;justify-content:center;margin-top:12px;padding:13px" id="pwGo">دخول</button></div></div>
+
+<div class="coach-ring" id="coachRing" style="display:none"></div>
+<div class="coach-arrow" id="coachArrow" style="display:none"></div>
+<div class="coach-tip" id="coachTip" style="display:none"></div>
 
 <div class="toast" id="toast"></div>
 
@@ -868,6 +880,7 @@ async function syncLive(){
   buildFromLive(); applyLiveToPlayers();
   refreshFinished(); applyManual();
   paint(); if(S.admin) refreshAdmin();
+  coachNext();
 }
 
 /* ===== نقطة الجولة الحيّة =====
@@ -1732,7 +1745,7 @@ $('#bulkSave')?.addEventListener('click',async function(){
   note.className = fail?'note err':'note ok';
   note.textContent = fail? `حُفظ ${ok} وتعذّر ${fail}` : `تم حفظ ${ok} ${ok===1?'توقع':'توقعات'}`;
   this.disabled=false;
-  if(!fail) setTimeout(()=>hide('#vBulk'),900);
+  if(!fail) setTimeout(()=>{hide('#vBulk'); coachNext();},900);
 });
 
 /* ===== ٣) التوقع الجريء + ٨) أصعب مباراة ===== */
@@ -1996,6 +2009,77 @@ $$('[data-close]').forEach(b=>b.onclick=()=>hide('#'+b.closest('.veil').id));
 $$('.veil').forEach(v=>v.onclick=e=>{if(e.target===v)hide('#'+v.id);});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')$$('.veil.on').forEach(v=>hide('#'+v.id));});
 
+/* ============================================================
+   الإرشاد اللحظي — خطوة واحدة في وقتها، لا تُغلق إلا بتنفيذ الفعل
+   ============================================================ */
+const COACH=[
+  {k:'name',  sel:'#meBtn',
+   t:'ابدأ من هنا', s:'اكتب اسمك ليُسجَّل توقعك ويظهر ترتيبك بين المتسابقين.',
+   done:()=>!!S.me},
+  {k:'pick',  sel:'#bulkBtn',
+   t:'توقّع مباريات الجولة', s:'اختر الفائز أو التعادل لكل مباراة في شاشة واحدة.',
+   done:()=>S.preds.some(p=>p.user_name===S.me)},
+  {k:'board', sel:'.tabs .tab[data-p="board"]',
+   t:'تابع ترتيبك', s:'كل توقع صحيح = نقطة واحدة. هنا ترى موقعك بين الجميع.',
+   done:()=>localStorage.getItem('splCoach_board')==='1'},
+  {k:'prev',  sel:'.tabs .tab[data-p="prev"]',
+   t:'من أصاب ومن أخطأ؟', s:'بعد انتهاء المباراة تُكشف توقعات الجميع — الصحيح بالأخضر والخاطئ بالأحمر.',
+   done:()=>localStorage.getItem('splCoach_prev')==='1',
+   when:()=>S.fixtures.some(f=>outcome(f))}
+];
+let coachIdx=-1, coachEl=null;
+
+function coachOff(){
+  ['#coachRing','#coachArrow','#coachTip'].forEach(s=>{const e=$(s); if(e) e.style.display='none';});
+  coachEl=null; coachIdx=-1;
+}
+function coachSkip(){ localStorage.setItem('splCoachDone','1'); coachOff(); }
+
+function coachNext(){
+  if(localStorage.getItem('splCoachDone')==='1') return coachOff();
+  const step=COACH.find(c=>!c.done() && (!c.when || c.when()));
+  if(!step){                                     // أُنجزت كل الخطوات المتاحة
+    if(COACH.every(c=>c.done())) localStorage.setItem('splCoachDone','1');
+    return coachOff();
+  }
+  coachIdx=COACH.indexOf(step);
+  coachEl=document.querySelector(step.sel);
+  if(!coachEl || coachEl.offsetParent===null){ coachOff(); return; }
+  coachDraw(step);
+}
+function coachDraw(step){
+  const r=coachEl.getBoundingClientRect();
+  const ring=$('#coachRing'), tip=$('#coachTip'), arw=$('#coachArrow');
+  const pad=6;
+  ring.style.display='block';
+  ring.style.top=(r.top-pad)+'px'; ring.style.left=(r.left-pad)+'px';
+  ring.style.width=(r.width+pad*2)+'px'; ring.style.height=(r.height+pad*2)+'px';
+
+  tip.style.display='block';
+  tip.innerHTML=`<div class="ct">${step.t}</div><div class="cs">${step.s}</div>
+    <div class="cf"><span class="dots">${COACH.map((c,i)=>
+      `<i class="${i===coachIdx?'on':''}"></i>`).join('')}</span>
+      <button class="skip" onclick="coachSkip()">تخطّي الإرشاد</button></div>`;
+
+  const tw=tip.offsetWidth, th=tip.offsetHeight;
+  let left=Math.min(Math.max(8, r.left+r.width/2-tw/2), innerWidth-tw-8);
+  let top=r.bottom+14, below=true;
+  if(top+th>innerHeight-8){ top=r.top-th-14; below=false; }
+  tip.style.left=left+'px'; tip.style.top=Math.max(8,top)+'px';
+
+  arw.style.display='block';
+  arw.style.left=(Math.min(Math.max(r.left+r.width/2-9, left+12), left+tw-30))+'px';
+  if(below){ arw.style.top=(r.bottom+5)+'px'; arw.style.transform='none'; }
+  else { arw.style.top=(r.top-14)+'px'; arw.style.transform='rotate(180deg)'; }
+}
+function coachRefresh(){
+  if(coachIdx<0||!coachEl) return;
+  if(coachEl.offsetParent===null){ coachOff(); return; }   // اختفى الزر: نخفي التلميح
+  coachDraw(COACH[coachIdx]);
+}
+addEventListener('resize', coachRefresh);
+addEventListener('scroll', coachRefresh, {passive:true});
+
 /* تطبيع الاسم: الهمزات · التاء المربوطة · الألف المقصورة · المسافات */
 function normName(s){
   return String(s||'').trim().replace(/\s+/g,' ')
@@ -2058,7 +2142,7 @@ $('#nameGo').onclick=()=>{const v=$('#nameIn').value.trim();
   S.me=v; localStorage.setItem('splName',v);
   $('#meBtn').querySelector('span').textContent=v;
   hide('#vName');renderMatches();renderRemind();renderMe();renderBoard();toast('أهلاً '+v);
-  localStorage.setItem('splSeen','1');};
+  setTimeout(coachNext,500);};
 $('#nameIn').addEventListener('keydown',e=>{if(e.key==='Enter')$('#nameGo').click();});
 
 let pickFid=null;
@@ -2092,7 +2176,7 @@ $('#pickSave').onclick=async function(){
     await upsertPred(mine, {user_name:S.me, match_id:mid, prediction:value});
     await fetchPreds();applyManual();renderMatches();renderRemind();renderMe();renderPrev();renderTable();renderBoard(); if(S.admin)refreshAdmin();
     note.className='note ok';note.textContent='تم الحفظ';
-    setTimeout(()=>hide('#vPick'),800);
+    setTimeout(()=>{hide('#vPick'); coachNext();},800);
   }catch(e){note.className='note err';note.textContent='لم يُحفظ: '+(e.message||'خطأ');}
   finally{this.disabled=false;}
 };
@@ -2471,6 +2555,9 @@ async function resDelete(){
 
 /* التبويبات والتشغيل */
 $$('.tabs .tab[data-p]').forEach(t=>t.onclick=()=>{
+  if(t.dataset.p==='board') localStorage.setItem('splCoach_board','1');
+  if(t.dataset.p==='prev')  localStorage.setItem('splCoach_prev','1');
+  setTimeout(coachNext,350);
   $$('.tabs .tab[data-p]').forEach(x=>x.classList.remove('on'));t.classList.add('on');
   $$('.panel').forEach(p=>p.classList.remove('on'));
   $('#p-'+t.dataset.p).classList.add('on');
@@ -2479,11 +2566,8 @@ $$('.tabs .tab[data-p]').forEach(t=>t.onclick=()=>{
 applyTheme(localStorage.getItem('splTheme')||'dark');
 paintFromCache();
 
-/* ترحيب لمن يفتح الرابط أول مرة */
-function startNow(){ hide('#vWelcome'); localStorage.setItem('splSeen','1'); $('#meBtn').click(); }
-if(!localStorage.getItem('splSeen') && !localStorage.getItem('splName')){
-  setTimeout(()=>show('#vWelcome'), 700);
-}
+/* الإرشاد اللحظي يبدأ بعد تحميل الواجهة */
+setTimeout(coachNext, 900);
 
 /* رابط مباشر: ?m=رقم المباراة  أو  ?r=رقم الجولة */
 function openFromUrl(){
@@ -2504,7 +2588,7 @@ Object.assign(window,{openPick,openMatch,openPlayer,loadAll,hide,starsMode,board
   renderCompare,adminTab,adminSave,adminDelete,adminLoadPred,fillPlayers,lockAdmin,toggleTheme,
   resLoad,resSave,resDelete,staleDeleteAll,staleCopy,goPick,shareCard,exportCSV,renderMe,paint,toggleOld,
   renderNews,renderSearch,renderCards,openClubCards,openBulk,setBulk,shareLink,syncLive,fetchLive,mpTab,
-  checkName,useName,startNow,normName,mergeNames,fillMerge});
+  checkName,useName,normName,mergeNames,fillMerge,coachNext,coachSkip});
 </script>
 </body>
 </html>
