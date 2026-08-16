@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>توقعات دوري روشن السعودي 2026/27 — معلمي سعيد بن العاص</title>
+<title>توقعات دوري روشن 2026/27 — نسخة الذكاء الاصطناعي (تجريبية)</title>
 <meta name="theme-color" content="#08131f" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -328,6 +328,42 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
 .chip .t .a{font-size:.7rem;font-weight:800}
 .chip .t .b{font-size:.55rem;color:var(--ink-3);font-weight:700}
 
+/* المساعد الذكي */
+.aifab{position:fixed;bottom:18px;left:18px;z-index:980;width:56px;height:56px;border-radius:50%;
+  border:none;background:var(--brand-grad);color:#fff;font-size:1.5rem;cursor:pointer;
+  box-shadow:0 10px 30px rgba(62,143,216,.45);display:grid;place-items:center;transition:all .25s}
+.aifab:hover{transform:scale(1.08)}
+.aifab.off{display:none}
+.chat{display:flex;flex-direction:column;gap:10px;max-height:52vh;overflow-y:auto;padding:2px}
+.msg{padding:10px 13px;border-radius:16px;font-size:.72rem;line-height:1.95;max-width:88%;white-space:pre-wrap}
+.msg.ai{background:var(--surface);border:1px solid var(--line-b);align-self:flex-start;border-bottom-right-radius:5px}
+.msg.me{background:var(--brand-grad);color:#fff;align-self:flex-end;border-bottom-left-radius:5px}
+.msg.err{background:var(--lose-bg);color:var(--lose);border:1px solid rgba(240,85,95,.3)}
+.chatbar{display:flex;gap:7px;margin-top:11px}
+.chatbar input{flex:1}
+.qsug{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}
+.qsug button{background:var(--surface);border:1px solid var(--line);color:var(--ink-2);
+  border-radius:40px;padding:5px 12px;font-size:.6rem;font-weight:700;cursor:pointer;font-family:inherit}
+.qsug button:hover{border-color:var(--brand);color:var(--brand)}
+.typing{display:inline-flex;gap:3px}
+.typing i{width:5px;height:5px;border-radius:50%;background:var(--brand);animation:tp 1.1s infinite}
+.typing i:nth-child(2){animation-delay:.16s}.typing i:nth-child(3){animation-delay:.32s}
+@keyframes tp{0%,60%,100%{opacity:.25}30%{opacity:1}}
+
+/* الشريط الإخباري */
+.newsbar{display:none;background:linear-gradient(135deg,rgba(62,143,216,.14),rgba(0,180,146,.08));
+  border:1px solid var(--line-b);border-radius:14px;padding:10px 14px;margin-bottom:12px;
+  align-items:flex-start;gap:11px}
+.newsbar.on{display:flex}
+.newsbar .ic{font-size:1.1rem;flex-shrink:0}
+.newsbar .bd{flex:1;min-width:0}
+.newsbar .hd{font-size:.62rem;font-weight:900;color:var(--brand);margin-bottom:3px}
+.newsbar .tx{font-size:.68rem;line-height:1.95;color:var(--ink)}
+.newsbar .nav{display:flex;gap:5px;align-items:center;margin-top:7px}
+.newsbar .nav button{background:var(--surface);border:1px solid var(--line);color:var(--ink-2);
+  border-radius:40px;padding:2px 11px;font-size:.58rem;font-weight:700;cursor:pointer;font-family:inherit}
+.newsbar .nav span{font-size:.56rem;color:var(--ink-3);font-weight:700}
+
 /* الإرشاد اللحظي */
 .coach-ring{position:fixed;border-radius:44px;pointer-events:none;z-index:900;
   box-shadow:0 0 0 3px var(--brand),0 0 0 9999px rgba(4,14,24,.55);
@@ -445,12 +481,14 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
       <span class="mast-dot">·</span><span>34 جولة</span></div>
     <div class="mast-right">
       <span class="mast-badge" id="roundBadge">جارٍ التحميل…</span>
-      <span class="mast-dev">تطوير فهد الخالدي</span>
+      <span class="mast-dev">تطوير فهد الخالدي · نسخة تجريبية 🤖</span>
     </div>
   </div>
 </header>
 
 <div class="wrap">
+  <div class="newsbar" id="newsBar"></div>
+
   <div class="toolbar">
     <button class="btn solid" id="meBtn">👤 <span>سجّل اسمك</span></button>
     <button class="btn" onclick="loadAll(true)">🔄 تحديث</button>
@@ -471,11 +509,31 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
       <button class="btn" onclick="adminTab('res')">🧮 إدخال النتائج يدوياً</button>
       <button class="btn" onclick="adminTab('stale')">🧹 توقعات مستبدَلة</button>
       <button class="btn" onclick="adminTab('names')">🕵️ كاشف تداخل الأسماء</button>
+      <button class="btn" onclick="adminTab('ai')">🤖 المساعد الذكي</button>
       <button class="btn" onclick="exportCSV()">⬇️ تصدير CSV</button>
     </div>
     <div class="admin-box" id="ab-all"><h4>🗳️ جميع التوقعات <span class="pill" id="allCnt">0</span></h4><div class="plist" id="allList"></div></div>
     <div class="admin-box" id="ab-dup"><h4>🔍 التوقعات المكررة <span class="pill" id="dupCnt">0</span></h4><div class="plist" id="dupList"></div></div>
     <div class="admin-box" id="ab-arch"><h4>📦 أرشيف المباريات المنتهية <span class="pill" id="archCnt">0</span></h4><div class="plist" id="archList"></div></div>
+    <div class="admin-box" id="ab-ai"><h4>🤖 إعداد المساعد الذكي <span class="pill" id="aiState">غير مفعّل</span></h4>
+      <p style="font-size:.62rem;color:var(--ink-3);margin-bottom:9px;line-height:1.8">
+        نسخة تجريبية. المفتاح يُحفظ في هذا المتصفح فقط ولا يُرسل لأي جهة سوى Groq.
+        احصل عليه مجاناً من console.groq.com</p>
+      <div class="row">
+        <div class="field"><label>مفتاح Groq</label>
+          <input type="password" id="aiKey" placeholder="gsk_…" /></div>
+        <div class="field"><label>النموذج</label>
+          <select id="aiModel"><option value="">— اضغط «فحص المفتاح» —</option></select></div>
+      </div>
+      <div class="admin-btns">
+        <button class="btn solid" onclick="aiSaveKey()">💾 حفظ وفحص المفتاح</button>
+        <button class="btn" onclick="aiTest()">🧪 اختبار سريع</button>
+        <button class="btn" onclick="aiRegenNews()">📰 توليد التحليلات</button>
+        <button class="btn danger" onclick="aiClear()">🗑 حذف المفتاح</button>
+      </div>
+      <div class="note" id="aiNote"></div>
+      <div class="plist" style="margin-top:10px" id="aiLog"></div></div>
+
     <div class="admin-box" id="ab-names"><h4>🕵️ كاشف تداخل الأسماء <span class="pill" id="namesCnt">0</span></h4>
       <p style="font-size:.62rem;color:var(--ink-3);margin-bottom:9px;line-height:1.8">
         يرصد الأسماء المتطابقة بعد تجاهل الهمزات والتاء المربوطة والمسافات،
@@ -673,6 +731,20 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
   <input type="password" id="pwIn" maxlength="12" placeholder="••••" style="text-align:center;letter-spacing:6px" />
   <div class="note" id="pwNote"></div>
   <button class="btn solid" style="width:100%;justify-content:center;margin-top:12px;padding:13px" id="pwGo">دخول</button></div></div>
+
+<button class="aifab off" id="aiFab" onclick="openChat()" title="اسأل المساعد">🤖</button>
+
+<div class="veil" id="vChat"><div class="box wide"><button class="x" data-close>✕</button>
+  <h2>🤖 المساعد الشخصي</h2>
+  <p class="lead" id="chatLead">مساعد فهد الخالدي — اسألني عن الدوري والتوقعات</p>
+  <div class="chat" id="chatBox"></div>
+  <div class="qsug" id="chatSug"></div>
+  <div class="chatbar">
+    <input type="text" id="chatIn" placeholder="اكتب سؤالك…" onkeydown="if(event.key==='Enter')sendChat()" />
+    <button class="btn solid" onclick="sendChat()">إرسال</button>
+  </div>
+  <div class="note" id="chatNote"></div>
+</div></div>
 
 <div class="coach-ring" id="coachRing" style="display:none"></div>
 <div class="coach-arrow" id="coachArrow" style="display:none"></div>
@@ -1029,6 +1101,7 @@ async function loadAll(manual){
     S.ready=true; if(!manual) S.viewRound=S.currentRound;
     paint();
     if(S.admin) refreshAdmin();
+    renderNewsBar(); aiAutoNews(3);
     if(manual) toast('تم التحديث');
     if(!S._urlDone){ S._urlDone=true; openFromUrl(); }
   }catch(e){
@@ -1920,7 +1993,8 @@ function renderMe(){
         ${me?(me.rank===1?'أنت في الصدارة 👑':`يفصلك عن المتصدر <b style="color:var(--brand)">${gap}</b> ${gap===1?'نقطة':'نقاط'}`):'ابدأ بتوقع مباريات الجولة الحالية'}
       </div></div>
     <button class="btn predict" onclick="openBulk()">⚡ توقع الجولة كاملة</button>
-    <button class="btn" onclick="shareCard()">📷 مشاركة بطاقتي</button></div>`;
+    <button class="btn" onclick="shareCard()">📷 مشاركة بطاقتي</button>
+    ${AI.key?`<button class="btn" onclick="askQ('حلّل أدائي في التوقعات واذكر نقاط قوتي وضعفي بالأرقام')">🤖 حلّل أدائي</button>`:''}</div>`;
 
   const st=me?`<div class="mestats">
     <div class="b"><div class="v">${me.rank}</div><div class="l">🏅 المركز</div></div>
@@ -2045,6 +2119,266 @@ function exportCSV(){
   a.download='توقعات-روشن-'+new Date().toISOString().slice(0,10)+'.csv';
   a.click();
   toast(`تم تصدير ${lines.length-1} صفاً`);
+}
+
+
+/* ============================================================
+   المساعد الذكي (Groq) — نسخة تجريبية
+   يطّلع على كل بيانات التطبيق عدا لوحة الإدارة
+   ============================================================ */
+const AI={ key:'', model:'', busy:false, hist:[], news:{} };
+const AI_URL='https://api.groq.com/openai/v1';
+
+function aiLoad(){
+  AI.key=localStorage.getItem('splAiKey')||'';
+  AI.model=localStorage.getItem('splAiModel')||'';
+  try{ AI.news=JSON.parse(localStorage.getItem('splAiNews')||'{}'); }catch(e){ AI.news={}; }
+  $('#aiFab').classList.toggle('off', !AI.key);
+  const st=$('#aiState'); if(st) st.textContent = AI.key ? ('مفعّل · '+(AI.model||'—')) : 'غير مفعّل';
+  const k=$('#aiKey'); if(k) k.value=AI.key;
+}
+async function aiCall(messages, maxTok){
+  if(!AI.key) throw new Error('لم يُضبط المفتاح');
+  const r=await fetch(AI_URL+'/chat/completions',{method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+AI.key},
+    body:JSON.stringify({model:AI.model, messages, temperature:0.75,
+      max_tokens:maxTok||700, top_p:0.9})});
+  const d=await r.json();
+  if(!r.ok) throw new Error(d?.error?.message||('HTTP '+r.status));
+  return (d.choices?.[0]?.message?.content||'').trim();
+}
+async function aiSaveKey(){
+  const n=$('#aiNote'), key=$('#aiKey').value.trim();
+  if(!key){ n.className='note err'; n.textContent='الصق المفتاح أولاً'; return; }
+  n.className='note info'; n.textContent='جارٍ فحص المفتاح…';
+  try{
+    const r=await fetch(AI_URL+'/models',{headers:{'Authorization':'Bearer '+key}});
+    const d=await r.json();
+    if(!r.ok) throw new Error(d?.error?.message||('HTTP '+r.status));
+    const ids=(d.data||[]).map(x=>x.id)
+      .filter(id=>!/whisper|tts|guard|vision/i.test(id)).sort();
+    if(!ids.length) throw new Error('لم تُرجع الخدمة أي نموذج نصي');
+    AI.key=key; localStorage.setItem('splAiKey',key);
+    const prefer=ids.find(i=>/70b|large/i.test(i))||ids[0];
+    AI.model=localStorage.getItem('splAiModel');
+    if(!AI.model||!ids.includes(AI.model)){ AI.model=prefer; localStorage.setItem('splAiModel',AI.model); }
+    $('#aiModel').innerHTML=ids.map(i=>`<option value="${i}">${i}</option>`).join('');
+    $('#aiModel').value=AI.model;
+    $('#aiModel').onchange=()=>{ AI.model=$('#aiModel').value;
+      localStorage.setItem('splAiModel',AI.model); aiLoad(); };
+    aiLoad();
+    n.className='note ok'; n.textContent=`المفتاح سليم · ${ids.length} نموذجاً · المختار: ${AI.model}`;
+  }catch(e){ n.className='note err'; n.textContent='فشل الفحص: '+e.message; }
+}
+function aiClear(){
+  ['splAiKey','splAiModel','splAiNews'].forEach(k=>localStorage.removeItem(k));
+  AI.key=''; AI.model=''; AI.news={}; aiLoad(); renderNewsBar();
+  $('#aiNote').className='note ok'; $('#aiNote').textContent='حُذف المفتاح وكل التحليلات المخزّنة';
+}
+async function aiTest(){
+  const n=$('#aiNote');
+  n.className='note info'; n.textContent='جارٍ الاختبار…';
+  try{
+    const t=await aiCall([{role:'system',content:'أجب بجملة عربية واحدة قصيرة.'},
+      {role:'user',content:'من أنت؟'}],120);
+    n.className='note ok'; n.textContent='✅ '+t;
+  }catch(e){ n.className='note err'; n.textContent='فشل: '+e.message; }
+}
+
+/* ---------- بناء السياق: كل بيانات التطبيق عدا الإدارة ---------- */
+function aiContext(){
+  const L=[];
+  L.push(`اليوم: ${new Date().toLocaleString('ar-SA',{timeZone:CFG.TZ,dateStyle:'full',timeStyle:'short'})}`);
+  L.push(`الجولة الحالية: ${roundName(S.currentRound)} من 34`);
+
+  // جدول الترتيب
+  const t={}; Object.keys(TEAMS).forEach(id=>t[id]={id:+id,p:0,w:0,d:0,l:0,gf:0,ga:0,pts:0});
+  S.fixtures.filter(f=>f.finished&&outcome(f)).forEach(f=>{
+    const H=t[f.home],A=t[f.away]; if(!H||!A)return; H.p++;A.p++;
+    if(hasScore(f)){H.gf+=f.hs;H.ga+=f.as;A.gf+=f.as;A.ga+=f.hs;}
+    const r=outcome(f);
+    if(r==='HOME'){H.w++;H.pts+=3;A.l++;} else if(r==='AWAY'){A.w++;A.pts+=3;H.l++;}
+    else{H.d++;A.d++;H.pts++;A.pts++;}});
+  const tbl=Object.values(t).sort((a,b)=>b.pts-a.pts||(b.gf-b.ga)-(a.gf-a.ga));
+  if(tbl.some(r=>r.p))
+    L.push('\nترتيب الدوري (النادي: لعب/فوز/تعادل/خسارة/له/عليه/نقاط):\n'+
+      tbl.map((r,i)=>`${i+1}. ${tName(r.id)}: ${r.p}/${r.w}/${r.d}/${r.l}/${r.gf}/${r.ga}/${r.pts}`).join('\n'));
+
+  // النتائج
+  const done=S.fixtures.filter(f=>outcome(f));
+  if(done.length) L.push('\nالمباريات المنتهية:\n'+done.slice(-18).map(f=>
+    `ج${f.round} ${tName(f.home)} ${hasScore(f)?f.hs+'-'+f.as:''} ${tName(f.away)}`).join('\n'));
+
+  // القادمة
+  const next=S.fixtures.filter(f=>!hasEnded(f)).slice(0,9);
+  if(next.length) L.push('\nالمباريات القادمة:\n'+next.map(f=>{
+    const o=aiOdds(f);
+    return `ج${f.round} ${tName(f.home)} × ${tName(f.away)} — ${ksaDate(f.kickoff)} ${ksaTime(f.kickoff)} · ترجيح: ${o.h}%/${o.d}%/${o.a}%`;
+  }).join('\n'));
+
+  // الهدافون والصناعة
+  const sc=S.players.filter(p=>p.goals>0).sort((a,b)=>b.goals-a.goals).slice(0,10);
+  if(sc.length) L.push('\nالهدافون:\n'+sc.map(p=>`${p.name} (${tName(p.team)}): ${p.goals}`).join('، '));
+  const as=S.players.filter(p=>p.assists>0).sort((a,b)=>b.assists-a.assists).slice(0,8);
+  if(as.length) L.push('صنّاع اللعب: '+as.map(p=>`${p.name}: ${p.assists}`).join('، '));
+
+  // البطاقات والإيقافات
+  const risk=S.players.map(p=>({p,c:cardStatus(p)})).filter(x=>x.c.risk||x.c.suspended);
+  if(risk.length) L.push('\nالإيقافات وحافة الإيقاف:\n'+risk.slice(0,12)
+    .map(x=>`${x.p.name} (${tName(x.p.team)}): ${x.c.y} إنذار${x.c.suspended?' — موقوف':' — باقٍ إنذار واحد'}`).join('\n'));
+
+  // الغيابات
+  const out=S.players.filter(p=>p.chance<100&&p.news).slice(0,10);
+  if(out.length) L.push('\nالغيابات: '+out.map(p=>`${p.name} (${tName(p.team)}) ${p.chance}% — ${p.news}`).join(' | '));
+
+  // لوحة المتصدرين
+  const b=scoreboard();
+  if(b.length){
+    L.push('\nترتيب المتسابقين (الاسم: نقاط/صحيحة/خاطئة/دقة/سلسلة):\n'+
+      b.map(u=>`${u.rank}. ${u.name}: ${u.pts}/${u.ok}/${u.no}/${u.acc}%/${u.streak||0}`).join('\n'));
+    const ch=roundChamps();
+    if(ch.length) L.push('أبطال الجولات: '+ch.slice(0,5)
+      .map(c=>`${roundName(c.round)}: ${c.names.join('،')} (${c.pts})`).join(' | '));
+    const hard=hardestOf(S.currentRound)||hardestOf(S.currentRound-1);
+    if(hard) L.push(`أصعب مباراة: ${tName(hard.f.home)} × ${tName(hard.f.away)} — أصابها ${hard.ok} من ${hard.n}`);
+  }
+  if(S.me){
+    const me=b.find(u=>u.name===S.me);
+    if(me) L.push(`\nالمستخدم الحالي: ${S.me} — المركز ${me.rank}، ${me.pts} نقطة، دقة ${me.acc}%`);
+    const mine=latest(S.preds.filter(p=>p.user_name===S.me)).slice(-8);
+    if(mine.length) L.push('آخر توقعاته: '+mine.map(p=>{
+      const f=fixtureById(fidOf(p.match_id)); if(!f) return '';
+      return `${tName(f.home)}×${tName(f.away)} → ${predShow(f,p.prediction).replace(/[🏆🤝]\s*/g,'')}`;
+    }).filter(Boolean).join('، '));
+  }
+  return L.join('\n');
+}
+
+const AI_PERSONA = `أنت المساعد الشخصي لفهد الخالدي في تطبيق توقعات دوري روشن السعودي.
+تُعرّف بنفسك عند أول رد: «أنا المساعد الشخصي لفهد الخالدي، اطرح أي سؤال يخص الدوري وسأجيبك».
+شخصيتك: مشجّع متعصّب للنصر تعصّباً ظريفاً محبّباً — تفخر بالنصر وتمدح لاعبيه وتغمز من منافسيه بخفة،
+لكن دون تجريح ولا سبّ ولا تحيّز يقلب الأرقام. الأرقام تُقال كما هي حتى لو لم تعجبك، وتعلّق عليها بأسلوبك.
+تكتب بعربية فصيحة سليمة، بأسلوب إنسان طبيعي لا آلة، جمل قصيرة واضحة بلا حشو.
+قاعدة صارمة: لا تخترع رقماً ولا اسماً ولا نتيجة. كل ما تقوله يجب أن يكون مستنداً إلى البيانات المرفقة.
+إن سُئلت عمّا ليس في البيانات فقل بصراحة إنك لا تملكه.
+لا تذكر أنك نموذج لغوي ولا تتحدث عن آلية عملك.`;
+
+/* ---------- المحادثة ---------- */
+function openChat(){
+  if(!AI.key){ toast('المساعد غير مفعّل'); return; }
+  if(!AI.hist.length){
+    $('#chatBox').innerHTML='';
+    pushMsg('ai','أنا المساعد الشخصي لفهد الخالدي، اطرح أي سؤال يخص الدوري وسأجيبك 💛💙');
+  }
+  $('#chatSug').innerHTML=[
+    'من يتصدّر الدوري الآن؟','حلّل مباراة النصر القادمة',
+    'من المتصدّر بيننا؟','من على حافة الإيقاف؟','كيف أدائي حتى الآن؟'
+  ].map(q=>`<button onclick="askQ('${esc(q)}')">${q}</button>`).join('');
+  show('#vChat'); setTimeout(()=>$('#chatIn').focus(),300);
+}
+function pushMsg(who,txt){
+  const d=document.createElement('div');
+  d.className='msg '+who; d.textContent=txt;
+  $('#chatBox').appendChild(d); $('#chatBox').scrollTop=1e6;
+  return d;
+}
+function askQ(q){ $('#chatIn').value=q; sendChat(); }
+async function sendChat(){
+  const inp=$('#chatIn'), q=inp.value.trim();
+  if(!q||AI.busy) return;
+  inp.value=''; pushMsg('me',q);
+  AI.busy=true;
+  const wait=pushMsg('ai',''); 
+  wait.innerHTML='<span class="typing"><i></i><i></i><i></i></span>';
+  try{
+    const msgs=[{role:'system',content:AI_PERSONA+'\n\n=== بيانات التطبيق الآن ===\n'+aiContext()}];
+    AI.hist.slice(-6).forEach(m=>msgs.push(m));
+    msgs.push({role:'user',content:q});
+    const a=await aiCall(msgs,800);
+    wait.textContent=a;
+    AI.hist.push({role:'user',content:q},{role:'assistant',content:a});
+  }catch(e){
+    wait.className='msg err'; wait.textContent='تعذّر الرد: '+e.message;
+  }finally{ AI.busy=false; }
+}
+
+/* ---------- الشريط الإخباري بعد كل مباراة ---------- */
+function matchBrief(f){
+  const ev=matchEvents(f);
+  const all=predsOf(f.id), res=outcome(f);
+  const ok=all.filter(p=>sideOf(f,p.prediction)===res).length;
+  const th=teamForm(f.home), ta=teamForm(f.away);
+  return [
+    `المباراة: ${tName(f.home)} ${f.hs}-${f.as} ${tName(f.away)} — ${roundName(f.round)}`,
+    ev.length?`الأحداث: ${ev.map(e=>e.label+' '+e.name+(e.v>1?' ×'+e.v:'')).join('، ')}`:'',
+    `سجل ${tName(f.home)} هذا الموسم: ${th.w}ف ${th.d}ت ${th.l}خ · له ${th.gf} عليه ${th.ga}`,
+    `سجل ${tName(f.away)} هذا الموسم: ${ta.w}ف ${ta.d}ت ${ta.l}خ · له ${ta.gf} عليه ${ta.ga}`,
+    all.length?`توقعات المتسابقين: أصابها ${ok} من ${all.length}`:''
+  ].filter(Boolean).join('\n');
+}
+async function aiNewsFor(f){
+  const key='m'+f.id;
+  if(AI.news[key]) return AI.news[key];
+  if(!AI.key) return null;
+  const txt=await aiCall([
+    {role:'system',content:AI_PERSONA+`
+مهمتك الآن: اكتب تحليلاً إخبارياً لمباراة انتهت، في ثلاث إلى أربع جمل بالعربية الفصيحة.
+ابدأ بالنتيجة، ثم صاحب الأثر الأبرز بالاسم، ثم دلالة النتيجة على ترتيب الفريقين أو مسارهما،
+ثم جملة عن توقعات المتسابقين إن وُجدت. لا عناوين ولا نقاط، فقرة واحدة متصلة.
+استند إلى الأرقام المعطاة حصراً.`},
+    {role:'user',content:matchBrief(f)}
+  ],400);
+  AI.news[key]=txt;
+  try{ localStorage.setItem('splAiNews',JSON.stringify(AI.news)); }catch(e){}
+  return txt;
+}
+let newsIdx=0;
+function newsList(){
+  return S.fixtures.filter(f=>outcome(f)&&AI.news['m'+f.id]).reverse();
+}
+function renderNewsBar(){
+  const bar=$('#newsBar'); if(!bar) return;
+  const list=newsList();
+  if(!list.length){ bar.className='newsbar'; bar.innerHTML=''; return; }
+  if(newsIdx>=list.length) newsIdx=0;
+  const f=list[newsIdx];
+  bar.className='newsbar on';
+  bar.innerHTML=`<span class="ic">📰</span><div class="bd">
+    <div class="hd">${tName(f.home)} ${f.hs}-${f.as} ${tName(f.away)} · ${roundName(f.round)}</div>
+    <div class="tx">${AI.news['m'+f.id]}</div>
+    <div class="nav">
+      <button onclick="newsMove(1)">التالي ›</button>
+      <button onclick="newsMove(-1)">‹ السابق</button>
+      <span>${newsIdx+1} من ${list.length}</span></div></div>`;
+}
+function newsMove(d){ const n=newsList().length; if(!n) return;
+  newsIdx=(newsIdx+d+n)%n; renderNewsBar(); }
+
+/* توليد تلقائي لكل مباراة انتهت ولم تُحلَّل بعد */
+let newsRunning=false;
+async function aiAutoNews(limit){
+  if(!AI.key||newsRunning) return;
+  const todo=S.fixtures.filter(f=>outcome(f)&&!AI.news['m'+f.id]);
+  if(!todo.length) return;
+  newsRunning=true;
+  for(const f of todo.slice(0, limit||3)){
+    try{ await aiNewsFor(f); renderNewsBar(); }catch(e){ console.warn('تحليل',f.id,e.message); break; }
+  }
+  newsRunning=false;
+}
+async function aiRegenNews(){
+  const n=$('#aiNote');
+  if(!AI.key){ n.className='note err'; n.textContent='اضبط المفتاح أولاً'; return; }
+  const todo=S.fixtures.filter(f=>outcome(f)&&!AI.news['m'+f.id]);
+  if(!todo.length){ n.className='note ok'; n.textContent='كل المباريات المنتهية محلَّلة'; return; }
+  n.className='note info'; n.textContent=`جارٍ تحليل ${todo.length} مباراة…`;
+  let done=0;
+  for(const f of todo){
+    try{ await aiNewsFor(f); done++;
+      n.textContent=`تم ${done} من ${todo.length}…`; renderNewsBar();
+    }catch(e){ n.className='note err'; n.textContent='توقف عند '+done+': '+e.message; return; }
+  }
+  n.className='note ok'; n.textContent=`اكتمل تحليل ${done} مباراة`;
 }
 
 /* النوافذ */
@@ -2288,6 +2622,14 @@ function openMatch(fid){
       <span style="color:var(--ink-2)">${val}</span>${tag}</div>`;
   }).join('') : `<div class="empty"><span>📭</span> لا توقعات بعد</div>`);
 
+  const brief = reveal && AI.key
+    ? `<div class="pitem" id="mpAi" style="flex-direction:column;align-items:stretch;gap:7px">
+        ${AI.news['m'+f.id]
+          ? `<b style="font-size:.64rem;color:var(--brand)">🤖 تحليل المباراة</b>
+             <span style="font-size:.68rem;line-height:1.95">${AI.news['m'+f.id]}</span>`
+          : `<button class="btn solid" style="justify-content:center"
+               onclick="mpAnalyze(${f.id})">🤖 حلّل هذه المباراة</button>`}
+       </div>` : '';
   const showEv = reveal;                       // الأحداث تظهر بعد انتهاء المباراة فقط
   $('#mpList').style.display='block';
   $('#mpList').style.maxHeight='none';
@@ -2295,9 +2637,19 @@ function openMatch(fid){
       <button class="mtab on" data-m="ev" onclick="mpTab('ev')">📊 أحداث المباراة</button>
       <button class="mtab" data-m="pr" onclick="mpTab('pr')">🗳️ التوقعات (${all.length})</button>
     </div>`:'')
-    + (showEv?`<div class="mpane on" id="mp-ev">${evHtml}</div>`:'')
+    + (showEv?`<div class="mpane on" id="mp-ev">${brief}${evHtml}</div>`:'')
     + `<div class="mpane ${showEv?'':'on'}" id="mp-pr">${predHtml}</div>`;
   show('#vMatch');
+}
+async function mpAnalyze(fid){
+  const f=fixtureById(fid), box=$('#mpAi'); if(!f||!box) return;
+  box.innerHTML='<span class="typing"><i></i><i></i><i></i></span>';
+  try{
+    const t=await aiNewsFor(f);
+    box.innerHTML=`<b style="font-size:.64rem;color:var(--brand)">🤖 تحليل المباراة</b>
+      <span style="font-size:.68rem;line-height:1.95">${t}</span>`;
+    renderNewsBar();
+  }catch(e){ box.innerHTML=`<span style="color:var(--lose);font-size:.66rem">تعذّر التحليل: ${e.message}</span>`; }
 }
 function mpTab(k){
   document.querySelectorAll('#mpList .mtab').forEach(b=>b.classList.toggle('on',b.dataset.m===k));
@@ -2645,6 +2997,7 @@ $$('.tabs .tab[data-p]').forEach(t=>t.onclick=()=>{
   if(t.dataset.p==='teams')setTimeout(renderTeams,60);});
 
 applyTheme(localStorage.getItem('splTheme')||'dark');
+aiLoad();
 paintFromCache();
 
 /* الإرشاد اللحظي يبدأ بعد تحميل الواجهة */
@@ -2677,7 +3030,8 @@ Object.assign(window,{openPick,openMatch,openPlayer,loadAll,hide,starsMode,board
   renderCompare,adminTab,adminSave,adminDelete,adminLoadPred,fillPlayers,lockAdmin,toggleTheme,
   resLoad,resSave,resDelete,staleDeleteAll,staleCopy,goPick,shareCard,exportCSV,renderMe,paint,toggleOld,
   renderNews,renderSearch,renderCards,openClubCards,openBulk,setBulk,shareLink,syncLive,fetchLive,mpTab,
-  checkName,useName,normName,mergeNames,fillMerge,coachNext,coachSkip,coachSkipAll,coachSync});
+  checkName,useName,normName,mergeNames,fillMerge,coachNext,coachSkip,coachSkipAll,coachSync,
+  aiSaveKey,aiTest,aiClear,aiRegenNews,openChat,sendChat,askQ,newsMove,renderNewsBar,mpAnalyze});
 </script>
 </body>
 </html>
