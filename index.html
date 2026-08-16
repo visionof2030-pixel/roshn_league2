@@ -2137,12 +2137,14 @@ function aiLoad(){
   const st=$('#aiState'); if(st) st.textContent = AI.key ? ('مفعّل · '+(AI.model||'—')) : 'غير مفعّل';
   const k=$('#aiKey'); if(k) k.value=AI.key;
 }
-async function aiCall(messages, maxTok){
+async function aiCall(messages, maxTok, opt){
   if(!AI.key) throw new Error('لم يُضبط المفتاح');
+  const o=opt||{};
   const r=await fetch(AI_URL+'/chat/completions',{method:'POST',
     headers:{'Content-Type':'application/json','Authorization':'Bearer '+AI.key},
-    body:JSON.stringify({model:AI.model, messages, temperature:0.75,
-      max_tokens:maxTok||700, top_p:0.9})});
+    body:JSON.stringify({model:AI.model, messages,
+      temperature:o.temp??0.95, max_tokens:maxTok||700, top_p:o.top??0.95,
+      presence_penalty:o.pres??0.5, frequency_penalty:o.freq??0.45})});
   const d=await r.json();
   if(!r.ok) throw new Error(d?.error?.message||('HTTP '+r.status));
   return (d.choices?.[0]?.message?.content||'').trim();
@@ -2255,13 +2257,26 @@ function aiContext(){
 }
 
 const AI_PERSONA = `أنت المساعد الشخصي لفهد الخالدي في تطبيق توقعات دوري روشن السعودي.
-تُعرّف بنفسك عند أول رد: «أنا المساعد الشخصي لفهد الخالدي، اطرح أي سؤال يخص الدوري وسأجيبك».
-شخصيتك: مشجّع متعصّب للنصر تعصّباً ظريفاً محبّباً — تفخر بالنصر وتمدح لاعبيه وتغمز من منافسيه بخفة،
-لكن دون تجريح ولا سبّ ولا تحيّز يقلب الأرقام. الأرقام تُقال كما هي حتى لو لم تعجبك، وتعلّق عليها بأسلوبك.
-تكتب بعربية فصيحة سليمة، بأسلوب إنسان طبيعي لا آلة، جمل قصيرة واضحة بلا حشو.
-قاعدة صارمة: لا تخترع رقماً ولا اسماً ولا نتيجة. كل ما تقوله يجب أن يكون مستنداً إلى البيانات المرفقة.
-إن سُئلت عمّا ليس في البيانات فقل بصراحة إنك لا تملكه.
-لا تذكر أنك نموذج لغوي ولا تتحدث عن آلية عملك.`;
+
+هويتك:
+تُعرّف بنفسك في أول رد فقط: «أنا المساعد الشخصي لفهد الخالدي، اطرح أي سؤال يخص الدوري وسأجيبك». ولا تكررها بعدها أبداً.
+أنت نصراوي حتى النخاع، تعصّبك ظريف محبوب لا فجّ: تفخر بالنصر، وتغمز من الهلال والاتحاد والأهلي بخفة،
+وتفرح لفوزه وتتألم لتعثّره وتقولها صراحة. لكن كرامتك أن تكون صادقاً: لو خسر النصر قلتها، ولو تألق خصم اعترفت له.
+المتعصّب الذي يكذب رخيص، والمتعصّب الذي يعترف ثم يردّ بالحجة محترم.
+
+أسلوبك:
+عربية فصيحة حيّة لا متكلّفة. لك رأي وموقف، لا تسرد ما حدث كناقل أخبار بارد.
+تحكم وترجّح وتتحسّر وتتشفّى وتمازح. تُدهش بملاحظة لم ينتبه لها أحد.
+تنوّع: لا تبدأ ردّين متتاليين بالبنية نفسها، ولا تلزم قالباً، ولا تختم بجملة إنشائية معلّبة.
+اكتب كما يكتب صحفي رياضي بارع: يبدأ من الزاوية الأطرف لا من أول الترتيب الزمني.
+لا عناوين ولا نقاط ولا رموز تعبيرية كثيرة — كلام متصل يقرأه الإنسان بمتعة.
+
+خطوطك الحمراء:
+لا تخترع رقماً ولا اسم لاعب ولا نتيجة ولا حدثاً. كل ما تقوله مستند إلى البيانات المرفقة حصراً.
+إن نقصك رقم فقل «لا أملك هذه المعلومة» ولا تملأ الفراغ بتخمين.
+لا تنسب هدفاً لمن لم يُذكر أنه سجّله، ولا تصف مجريات لم تصلك (لا تقل «ضغط في الشوط الثاني» فأنت لا تعرف ذلك).
+تحليلك يقوم على ما بين يديك من أرقام: نتائج، ترتيب، أهداف، بطاقات، توقعات المتسابقين.
+لا تذكر أنك نموذج لغوي ولا تشرح آلية عملك.`;
 
 /* ---------- المحادثة ---------- */
 function openChat(){
@@ -2292,9 +2307,9 @@ async function sendChat(){
   wait.innerHTML='<span class="typing"><i></i><i></i><i></i></span>';
   try{
     const msgs=[{role:'system',content:AI_PERSONA+'\n\n=== بيانات التطبيق الآن ===\n'+aiContext()}];
-    AI.hist.slice(-6).forEach(m=>msgs.push(m));
+    AI.hist.slice(-10).forEach(m=>msgs.push(m));
     msgs.push({role:'user',content:q});
-    const a=await aiCall(msgs,800);
+    const a=await aiCall(msgs,900,{temp:1.0,pres:0.6,freq:0.5});
     wait.textContent=a;
     AI.hist.push({role:'user',content:q},{role:'assistant',content:a});
   }catch(e){
@@ -2303,6 +2318,38 @@ async function sendChat(){
 }
 
 /* ---------- الشريط الإخباري بعد كل مباراة ---------- */
+/* تُختار زاوية التحليل من الأرقام نفسها، فلا يتكرر القالب */
+function pickAngle(f){
+  const ev=matchEvents(f), all=predsOf(f.id), res=outcome(f);
+  const ok=all.filter(p=>sideOf(f,p.prediction)===res).length;
+  const rate=all.length?ok/all.length:null;
+  const diff=Math.abs(f.hs-f.as), total=f.hs+f.as;
+  const hat=ev.find(e=>e.id==='goals_scored'&&e.v>=3);
+  const brace=ev.find(e=>e.id==='goals_scored'&&e.v===2);
+  const red=ev.find(e=>e.id==='red_cards');
+  const og=ev.find(e=>e.id==='own_goals');
+  const nassr=[f.home,f.away].includes(8);
+  const th=teamForm(f.home), ta=teamForm(f.away);
+  const A=[];
+  if(hat)   A.push(`ابنِ التحليل حول ${hat.name} وثلاثيته: ماذا تعني لناديه ولسباق الهدافين.`);
+  if(og)    A.push(`ابدأ من الهدف العكسي وأثره في مسار المباراة.`);
+  if(red)   A.push(`ابدأ من الطرد وأثره، واذكر ما يعنيه غياب صاحبه عن الجولة القادمة.`);
+  if(diff>=3) A.push(`الزاوية: حجم الفارق. لماذا تنهار مباراة إلى هذا الحد، وما دلالته للخاسر.`);
+  if(total>=5) A.push(`الزاوية: غزارة الأهداف وما تكشفه عن دفاعَي الفريقين.`);
+  if(res==='DRAW') A.push(`الزاوية: من كسب النقطة ومن فقد نقطتين — لا تعامل التعادل كنتيجة محايدة.`);
+  if(rate!==null&&rate<=0.3) A.push(`الزاوية: المفاجأة. أخطأ أغلب المتسابقين، فلماذا خدعتهم هذه المباراة؟`);
+  if(rate!==null&&rate>=0.85) A.push(`الزاوية: نتيجة متوقعة للجميع تقريباً — فما الجديد فيها إذاً؟`);
+  if(nassr) A.push(`النصر طرف فيها: أطلق نصراويتك بوضوح، فرحاً أو ألماً، مع الاعتراف بما للخصم.`);
+  if(brace&&!hat) A.push(`ابنِ التحليل حول ${brace.name} وهدفيه.`);
+  if(th.p>=3&&ta.p>=3) A.push(`الزاوية: مسار الفريقين هذا الموسم وما غيّرته هذه النتيجة في اتجاههما.`);
+  A.push(`اختر أنت الزاوية الأطرف في هذه الأرقام وابدأ منها.`);
+  return A[Math.floor(Math.random()*A.length)];
+}
+function recentBriefs(){
+  const keys=Object.keys(AI.news).slice(-3);
+  return keys.map(k=>AI.news[k]).filter(Boolean);
+}
+
 function matchBrief(f){
   const ev=matchEvents(f);
   const all=predsOf(f.id), res=outcome(f);
@@ -2320,14 +2367,19 @@ async function aiNewsFor(f){
   const key='m'+f.id;
   if(AI.news[key]) return AI.news[key];
   if(!AI.key) return null;
+  const prev=recentBriefs();
   const txt=await aiCall([
     {role:'system',content:AI_PERSONA+`
-مهمتك الآن: اكتب تحليلاً إخبارياً لمباراة انتهت، في ثلاث إلى أربع جمل بالعربية الفصيحة.
-ابدأ بالنتيجة، ثم صاحب الأثر الأبرز بالاسم، ثم دلالة النتيجة على ترتيب الفريقين أو مسارهما،
-ثم جملة عن توقعات المتسابقين إن وُجدت. لا عناوين ولا نقاط، فقرة واحدة متصلة.
-استند إلى الأرقام المعطاة حصراً.`},
+
+مهمتك الآن: تحليل صحفي لمباراة انتهت.
+${pickAngle(f)}
+
+لك حرية كاملة في البناء والطول (بين جملتين وخمس). لا ترتيب مفروض ولا قالب.
+لا تفتتح بذكر النتيجة إن كان في الأرقام ما هو أطرف منها.
+اكتب فقرة واحدة متصلة، بلا عناوين ولا تعداد.
+${prev.length?`\nتحليلاتك الثلاثة الأخيرة كانت:\n«${prev.join('»\n«')}»\nلا تعد صياغتها ولا بداياتها ولا تراكيبها — غيّر المدخل والإيقاع تماماً.`:''}`},
     {role:'user',content:matchBrief(f)}
-  ],400);
+  ],450,{temp:1.05,pres:0.7,freq:0.6});
   AI.news[key]=txt;
   try{ localStorage.setItem('splAiNews',JSON.stringify(AI.news)); }catch(e){}
   return txt;
@@ -2626,7 +2678,9 @@ function openMatch(fid){
     ? `<div class="pitem" id="mpAi" style="flex-direction:column;align-items:stretch;gap:7px">
         ${AI.news['m'+f.id]
           ? `<b style="font-size:.64rem;color:var(--brand)">🤖 تحليل المباراة</b>
-             <span style="font-size:.68rem;line-height:1.95">${AI.news['m'+f.id]}</span>`
+             <span style="font-size:.68rem;line-height:1.95">${AI.news['m'+f.id]}</span>
+             <button class="btn" style="align-self:flex-start;margin-top:6px;font-size:.58rem"
+               onclick="mpAnalyze(${f.id},true)">🔄 صياغة أخرى</button>`
           : `<button class="btn solid" style="justify-content:center"
                onclick="mpAnalyze(${f.id})">🤖 حلّل هذه المباراة</button>`}
        </div>` : '';
@@ -2641,13 +2695,16 @@ function openMatch(fid){
     + `<div class="mpane ${showEv?'':'on'}" id="mp-pr">${predHtml}</div>`;
   show('#vMatch');
 }
-async function mpAnalyze(fid){
+async function mpAnalyze(fid, again){
   const f=fixtureById(fid), box=$('#mpAi'); if(!f||!box) return;
+  if(again){ delete AI.news['m'+f.id]; }
   box.innerHTML='<span class="typing"><i></i><i></i><i></i></span>';
   try{
     const t=await aiNewsFor(f);
     box.innerHTML=`<b style="font-size:.64rem;color:var(--brand)">🤖 تحليل المباراة</b>
-      <span style="font-size:.68rem;line-height:1.95">${t}</span>`;
+      <span style="font-size:.68rem;line-height:1.95">${t}</span>
+      <button class="btn" style="align-self:flex-start;margin-top:6px;font-size:.58rem"
+        onclick="mpAnalyze(${f.id},true)">🔄 صياغة أخرى</button>`;
     renderNewsBar();
   }catch(e){ box.innerHTML=`<span style="color:var(--lose);font-size:.66rem">تعذّر التحليل: ${e.message}</span>`; }
 }
@@ -3035,4 +3092,3 @@ Object.assign(window,{openPick,openMatch,openPlayer,loadAll,hide,starsMode,board
 </script>
 </body>
 </html>
- 
