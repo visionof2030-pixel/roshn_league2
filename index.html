@@ -328,6 +328,30 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
 .chip .t .a{font-size:.7rem;font-weight:800}
 .chip .t .b{font-size:.55rem;color:var(--ink-3);font-weight:700}
 
+/* الشريط الإخباري المتحرك */
+.ticker{display:none;position:relative;overflow:hidden;margin-bottom:14px;border-radius:14px;
+  background:linear-gradient(135deg,rgba(62,143,216,.16),rgba(0,180,146,.10));
+  border:1px solid var(--line-b);height:44px}
+.ticker.on{display:flex;align-items:center}
+.ticker .tag-live{flex-shrink:0;height:100%;display:flex;align-items:center;gap:6px;
+  padding:0 13px;background:var(--brand-grad);color:#fff;font-size:.62rem;font-weight:900;
+  z-index:2;box-shadow:0 0 18px rgba(0,0,0,.25)}
+.ticker .tag-live i{width:7px;height:7px;border-radius:50%;background:#fff;
+  animation:tkblink 1.2s infinite;display:block}
+@keyframes tkblink{0%,100%{opacity:1}50%{opacity:.25}}
+.ticker .track{flex:1;overflow:hidden;position:relative;height:100%}
+.ticker .move{position:absolute;white-space:nowrap;top:50%;transform:translateY(-50%);
+  font-size:.72rem;font-weight:700;color:var(--ink);line-height:1.6;
+  animation:tkrun var(--dur,44s) linear infinite;will-change:transform}
+@keyframes tkrun{from{transform:translate(-100%,-50%)}to{transform:translate(100%,-50%)}}
+.ticker:hover .move{animation-play-state:paused}
+.ticker .sep{color:var(--brand);opacity:.6;margin:0 14px}
+.ticker .hl{color:var(--brand-2);font-weight:900}
+.ticker .rf{flex-shrink:0;background:transparent;border:none;color:var(--ink-3);
+  font-size:.8rem;cursor:pointer;padding:0 10px}
+.ticker .rf:hover{color:var(--brand)}
+@media (max-width:600px){.ticker{height:40px}.ticker .move{font-size:.66rem}}
+
 /* كابتن هبد */
 .chat{display:flex;flex-direction:column;gap:10px;max-height:52vh;overflow-y:auto;padding:2px}
 .msg{padding:10px 13px;border-radius:16px;font-size:.72rem;line-height:1.95;max-width:88%;white-space:pre-wrap}
@@ -473,6 +497,12 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
 </header>
 
 <div class="wrap">
+  <div class="ticker" id="ticker">
+    <span class="tag-live"><i></i> نشرة كابتن هبد</span>
+    <span class="track"><span class="move" id="tickerMove"></span></span>
+    <button class="rf" onclick="buildBulletin(true)" title="نشرة جديدة">🔄</button>
+  </div>
+
   <div class="toolbar">
     <button class="btn solid" id="meBtn">👤 <span>سجّل اسمك</span></button>
     <button class="btn solid" onclick="openChat()">🤖 اسأل كابتن هبد</button>
@@ -1081,7 +1111,7 @@ function paint(){
   refreshFinished();
   renderRounds();renderMatches();renderRemind();renderMe();renderPrev();
   renderTable();renderStars();renderNews();renderCards();renderTeams();renderBoard();
-  fillArtRounds();
+  fillArtRounds(); buildBulletin();
   $('#roundBadge').textContent=roundName(S.currentRound);
   const live=S.fixtures.filter(f=>f.started&&!f.finished).length;
   $('#liveStat').textContent=live?`🔴 ${live} مباراة الآن`:`${S.fixtures.filter(f=>f.finished).length} مباراة منتهية`;
@@ -2335,7 +2365,13 @@ const AI_PERSONA = `اسمك «كابتن هبد»، المحلل الرياضي
 اكتب بالعربية فقط. ممنوع منعاً باتاً أي كلمة أو حرف بلغة أخرى (لا إنجليزية ولا هندية ولا غيرها).
 أسماء اللاعبين الأجنبية اكتبها بحروف عربية.
 ممنوع رموز التنسيق مثل ** أو ## أو الجداول. نص عربي عادي فقط.
-لا تكرر نفس البداية ولا نفس التراكيب، لكن حافظ على وضوح الكلام قبل كل شيء.`;
+لا تكرر نفس البداية ولا نفس التراكيب، لكن حافظ على وضوح الكلام قبل كل شيء.
+
+طول الرد في المحادثة:
+اختصر. جملتان إلى خمس كحد أقصى، تجيب على السؤال مباشرة بلا مقدمات ولا تلخيص في النهاية.
+لا تسرد كل الأرقام التي عندك، اذكر ما يخدم السؤال فقط.
+إن احتاج الجواب تفصيلاً أطول فاعرض على السائل أن يطلب المزيد بدل أن تسترسل.
+(هذا القيد يخص المحادثة فقط، أما المقالات والنشرات فلها تعليماتها الخاصة.)`;
 
 /* ---------------- السياق: كل أقسام التطبيق ---------------- */
 function aiContext(){
@@ -2433,11 +2469,100 @@ async function sendChat(){
     const msgs=[{role:'system',content:AI_PERSONA+'\n\n=== بيانات التطبيق الآن ===\n'+aiContext()}];
     AI.hist.slice(-10).forEach(m=>msgs.push(m));
     msgs.push({role:'user',content:q});
-    const a=await aiCall(msgs,1000,{temp:0.9,pres:0.3,freq:0.25});
+    const a=await aiCall(msgs,420,{temp:0.9,pres:0.3,freq:0.25});
     wait.textContent=a;
     AI.hist.push({role:'user',content:q},{role:'assistant',content:a});
   }catch(e){ wait.className='msg err'; wait.textContent='ما قدرت أرد: '+e.message; }
   finally{ AI.busy=false; }
+}
+
+/* ---------------- النشرة الإخبارية المتحركة ---------------- */
+function bulletinBrief(){
+  const r=S.currentRound;
+  const fx=(S.byRound[r]||[]).filter(f=>outcome(f));
+  const prev=fx.length?r:(S.rounds.filter(x=>(S.byRound[x]||[]).some(f=>outcome(f))).pop()||r);
+  const list=(S.byRound[prev]||[]).filter(f=>outcome(f));
+  const L=[`الجولة رقم ${prev}`];
+
+  if(list.length){
+    L.push('نتائج الجولة: '+list.map(f=>`${tName(f.home)} ${f.hs}-${f.as} ${tName(f.away)}`).join(' | '));
+    const goals={};
+    list.forEach(f=>matchEvents(f).filter(e=>e.id==='goals_scored')
+      .forEach(e=>goals[e.name]=(goals[e.name]||0)+e.v));
+    const top=Object.entries(goals).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    if(top.length) L.push('هدافو الجولة: '+top.map(([n,v])=>`${n} ${v}`).join('، '));
+  }
+  const sc=S.players.filter(p=>p.goals>0).sort((a,b)=>b.goals-a.goals).slice(0,5);
+  if(sc.length) L.push('صدارة الهدافين: '+sc.map(p=>`${p.name} (${tName(p.team)}) ${p.goals}`).join('، '));
+  const as=S.players.filter(p=>p.assists>0).sort((a,b)=>b.assists-a.assists).slice(0,4);
+  if(as.length) L.push('أكثر صنّاع اللعب: '+as.map(p=>`${p.name} ${p.assists}`).join('، '));
+
+  const st=S.players.map(p=>({p,c:cardStatus(p)}));
+  const susp=st.filter(x=>x.c.suspended).slice(0,6);
+  const risk=st.filter(x=>x.c.risk&&!x.c.suspended).slice(0,8);
+  if(susp.length) L.push('موقوفون: '+susp.map(x=>`${x.p.name} (${tName(x.p.team)})`).join('، '));
+  if(risk.length) L.push('مهددون بالإيقاف (٣ إنذارات): '+
+    risk.map(x=>`${x.p.name} (${tName(x.p.team)})`).join('، '));
+  const out=S.players.filter(p=>p.chance<100&&p.news).slice(0,6);
+  if(out.length) L.push('غيابات: '+out.map(p=>`${p.name} (${tName(p.team)}) ${p.chance}%`).join('، '));
+
+  const t={}; Object.keys(TEAMS).forEach(id=>t[id]={id:+id,p:0,pts:0,gf:0,ga:0});
+  S.fixtures.filter(f=>f.finished&&outcome(f)).forEach(f=>{
+    const H=t[f.home],A=t[f.away]; if(!H||!A)return; H.p++;A.p++;
+    if(hasScore(f)){H.gf+=f.hs;H.ga+=f.as;A.gf+=f.as;A.ga+=f.hs;}
+    const o=outcome(f);
+    if(o==='HOME')H.pts+=3; else if(o==='AWAY')A.pts+=3; else {H.pts++;A.pts++;}});
+  const tbl=Object.values(t).filter(x=>x.p).sort((a,b)=>b.pts-a.pts).slice(0,4);
+  if(tbl.length) L.push('صدارة الترتيب: '+tbl.map((x,i)=>`${i+1}. ${tName(x.id)} ${x.pts}`).join('، '));
+
+  const nxt=S.fixtures.filter(f=>!hasEnded(f)).slice(0,4);
+  if(nxt.length) L.push('قادم: '+nxt.map(f=>`${tName(f.home)} × ${tName(f.away)}`).join('، '));
+  return {round:prev, text:L.join('\n')};
+}
+function bulletinKey(){
+  const b=bulletinBrief();
+  let hsh=0; const s=b.text;
+  for(let i=0;i<s.length;i++){ hsh=((hsh<<5)-hsh+s.charCodeAt(i))|0; }
+  return 'bl'+b.round+'_'+hsh;
+}
+function paintTicker(txt){
+  const t=$('#ticker'), m=$('#tickerMove');
+  if(!t||!m) return;
+  if(!txt){ t.classList.remove('on'); return; }
+  const parts=txt.split(/\s*[•|]\s*|\n+/).map(s=>s.trim()).filter(Boolean);
+  m.innerHTML=parts.map(p=>`<span>${p}</span>`).join('<span class="sep">◆</span>')
+    +'<span class="sep">◆</span>';
+  t.classList.add('on');
+  const secs=Math.max(28, Math.min(120, Math.round(txt.length/9)));
+  m.style.setProperty('--dur', secs+'s');
+}
+async function buildBulletin(force){
+  const t=$('#ticker'); if(!t) return;
+  if(!AI.key || !S.ready) return;
+  const key=bulletinKey();
+  const saved=localStorage.getItem('splbBulletin');
+  if(saved && !force){
+    try{ const o=JSON.parse(saved);
+      if(o.key===key){ paintTicker(o.txt); return; }
+      paintTicker(o.txt);                       // نعرض القديمة ريثما تجهز الجديدة
+    }catch(e){}
+  }
+  const b=bulletinBrief();
+  try{
+    const txt=await aiCall([
+      {role:'system',content:AI_PERSONA+`
+
+مهمتك: نشرة إخبارية قصيرة تُقرأ في شريط متحرك.
+اكتب من ست إلى تسع جمل مستقلة، كل جملة في سطر، ويفصل بينها السطر الجديد فقط.
+غطِّ: أبرز نتائج الجولة، هدافيها، أكثر صنّاع اللعب، الموقوفين والمهددين بالإيقاف، الغيابات، صدارة الترتيب، وما ينتظرنا.
+كل جملة قصيرة (من ست إلى اثنتي عشرة كلمة) ومكتفية بنفسها لأنها تمر وحدها أمام العين.
+لهجة سعودية عامة خفيفة وحماسية، وميلك للنصر يظهر بجملة واحدة على الأكثر.
+ممنوع العناوين والترقيم والرموز والنقاط. جمل عربية فقط.`},
+      {role:'user',content:b.text}
+    ],600,{temp:0.95,pres:0.4,freq:0.35});
+    paintTicker(txt);
+    localStorage.setItem('splbBulletin',JSON.stringify({key,txt,t:Date.now()}));
+  }catch(e){ console.warn('النشرة:',e.message); }
 }
 
 /* ---------------- مقال الجولة ---------------- */
@@ -3155,7 +3280,7 @@ Object.assign(window,{openPick,openMatch,openPlayer,loadAll,hide,starsMode,board
   renderNews,renderSearch,renderCards,openClubCards,openBulk,setBulk,shareLink,syncLive,fetchLive,mpTab,
   checkName,useName,normName,mergeNames,fillMerge,coachNext,coachSkip,coachSkipAll,coachSync,
   aiSaveKey,aiTest,aiClear,openChat,sendChat,askQ,writeArticle,downloadArticle,showArticle,
-  aiModels,ensureModel,aiBench,rankModels,scoreModel});
+  aiModels,ensureModel,aiBench,rankModels,scoreModel,buildBulletin,paintTicker});
 </script>
 </body>
 </html>
