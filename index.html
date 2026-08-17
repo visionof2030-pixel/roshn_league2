@@ -501,7 +501,9 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
     <div class="admin-box" id="ab-arch"><h4>📦 أرشيف المباريات المنتهية <span class="pill" id="archCnt">0</span></h4><div class="plist" id="archList"></div></div>
     <div class="admin-box" id="ab-ai"><h4>🤖 إعداد كابتن هبد <span class="pill" id="aiState">—</span></h4>
       <p style="font-size:.62rem;color:var(--ink-3);margin-bottom:9px;line-height:1.8">
-        نسخة تجريبية عبر OpenRouter. المفتاح مضمّن في الملف ويمكن تبديله من هنا.</p>
+        نسخة تجريبية عبر OpenRouter. المفتاح يُحفظ في هذا المتصفح فقط.<br>
+        <b style="color:var(--draw)">مهم:</b> النماذج المجانية الصغيرة ضعيفة في العربية وتخلط لغات.
+        اختر نموذجاً كبيراً (‏70B فأكثر أو DeepSeek/Qwen) لتحصل على عربية سليمة.</p>
       <div class="row">
         <div class="field"><label>مفتاح OpenRouter</label>
           <input type="password" id="aiKey" placeholder="sk-or-v1-…" /></div>
@@ -2150,12 +2152,15 @@ async function aiModels(key){
   const all=items.map(m=>m.id).sort();
   return {free, all, list: free.length?free:all};
 }
+/* النماذج الصغيرة ضعيفة جداً في العربية، فنقدّم الكبيرة */
 function pickModel(list){
-  return list.find(i=>/llama-3\.3-70b|llama-3\.1-70b/i.test(i))
-      || list.find(i=>/deepseek/i.test(i))
-      || list.find(i=>/qwen.*(72|32)b/i.test(i))
-      || list.find(i=>/mistral|gemma/i.test(i))
-      || list[0] || '';
+  const good=list.filter(i=>!/1b|3b|mini|tiny|small|7b|8b/i.test(i));
+  const pool=good.length?good:list;
+  return pool.find(i=>/deepseek/i.test(i))
+      || pool.find(i=>/qwen.*(235|72|32)b/i.test(i))
+      || pool.find(i=>/llama.*(405|70)b/i.test(i))
+      || pool.find(i=>/mistral-large|command-r-plus/i.test(i))
+      || pool[0] || list[0] || '';
 }
 async function ensureModel(){
   if(AI.model) return AI.model;
@@ -2165,10 +2170,50 @@ async function ensureModel(){
   localStorage.setItem('splbAiModel',AI.model); aiLoad();
   return AI.model;
 }
+/* حروف من خارج العربية تدل على تشويش النموذج */
+const JUNK_RE=/[\u0900-\u097F\u0400-\u04FF\u4E00-\u9FFF\u3040-\u30FF\u0E00-\u0E7F\uAC00-\uD7AF]/;
+function arabicRatio(t){
+  const ar=(t.match(/[\u0600-\u06FF]/g)||[]).length;
+  const lt=(t.match(/[A-Za-z]/g)||[]).length;
+  return ar/(ar+lt+1);
+}
+function cleanOut(t){
+  return String(t||'')
+    .replace(/\*\*(.+?)\*\*/g,'$1')      // نزع تنسيق ماركداون
+    .replace(/^\s*#{1,6}\s*/gm,'')
+    .replace(/^\s*[-*]\s+/gm,'• ')
+    .replace(/\n{3,}/g,'\n\n')
+    .trim();
+}
+async function aiRaw(messages,maxTok,o){
+  const body={ model:AI.model, messages, max_tokens:maxTok||900,
+    temperature:o.temp??0.85, top_p:o.top??0.9,
+    presence_penalty:o.pres??0.25, frequency_penalty:o.freq??0.2 };
+  const r=await fetch(AI_URL+'/chat/completions',{method:'POST',
+    headers:{'Content-Type':'application/json','Authorization':'Bearer '+AI.key,
+      'HTTP-Referer':location.origin,'X-Title':'Roshn_B'},
+    body:JSON.stringify(body)});
+  const d=await r.json();
+  if(!r.ok) throw new Error(d?.error?.message||('HTTP '+r.status));
+  return (d.choices?.[0]?.message?.content||'').trim();
+}
 async function aiCall(messages, maxTok, o){
   o=o||{};
   if(!AI.key) throw new Error('المفتاح غير مضبوط — أضفه من لوحة الإدارة');
   await ensureModel();
+  let t=await aiRaw(messages,maxTok,o);
+  // إن خرج نص مشوّش أو مخلوط بلغات أخرى نعيد المحاولة بإعدادات متحفّظة
+  if(JUNK_RE.test(t) || arabicRatio(t)<0.72){
+    const strict=[{role:'system',content:'اكتب بالعربية فقط. ممنوع أي حرف لاتيني أو لغة أخرى. ممنوع رموز التنسيق.'},
+      ...messages];
+    try{ const t2=await aiRaw(strict,maxTok,{temp:0.6,top:0.85,pres:0,freq:0});
+      if(!JUNK_RE.test(t2) && arabicRatio(t2)>arabicRatio(t)) t=t2;
+    }catch(e){}
+  }
+  return cleanOut(t);
+}
+async function aiCall_unused(messages, maxTok, o){
+  o=o||{};
   const body={ model:AI.model, messages, max_tokens:maxTok||900,
     temperature:o.temp??1.0, top_p:o.top??0.95,
     presence_penalty:o.pres??0.7, frequency_penalty:o.freq??0.6 };
@@ -2232,7 +2277,13 @@ const AI_PERSONA = `اسمك «كابتن هبد»، المحلل الرياضي
 لو ناقصك رقم قل «ما عندي هالمعلومة» ولا تعبي الفراغ بتخمين.
 لا تصف مجريات ما وصلتك (ما تقول «ضغط في الشوط الثاني» وأنت ما تدري).
 تجاوب على أي سؤال حتى لو خارج الرياضة، وحاول تفيد قدر ما تقدر.
-لا تقول إنك نموذج لغوي ولا تشرح طريقة شغلك.`;
+لا تقول إنك نموذج لغوي ولا تشرح طريقة شغلك.
+
+قواعد الكتابة الإلزامية:
+اكتب بالعربية فقط. ممنوع منعاً باتاً أي كلمة أو حرف بلغة أخرى (لا إنجليزية ولا هندية ولا غيرها).
+أسماء اللاعبين الأجنبية اكتبها بحروف عربية.
+ممنوع رموز التنسيق مثل ** أو ## أو الجداول. نص عربي عادي فقط.
+لا تكرر نفس البداية ولا نفس التراكيب، لكن حافظ على وضوح الكلام قبل كل شيء.`;
 
 /* ---------------- السياق: كل أقسام التطبيق ---------------- */
 function aiContext(){
@@ -2330,7 +2381,7 @@ async function sendChat(){
     const msgs=[{role:'system',content:AI_PERSONA+'\n\n=== بيانات التطبيق الآن ===\n'+aiContext()}];
     AI.hist.slice(-10).forEach(m=>msgs.push(m));
     msgs.push({role:'user',content:q});
-    const a=await aiCall(msgs,1000,{temp:1.0,pres:0.7,freq:0.6});
+    const a=await aiCall(msgs,1000,{temp:0.9,pres:0.3,freq:0.25});
     wait.textContent=a;
     AI.hist.push({role:'user',content:q},{role:'assistant',content:a});
   }catch(e){ wait.className='msg err'; wait.textContent='ما قدرت أرد: '+e.message; }
@@ -2398,7 +2449,7 @@ async function writeArticle(again){
 ابدأ من الزاوية الأطرف في الأرقام، لا من أول مباراة زمنياً.
 لا تخترع شيئاً خارج الأرقام المعطاة.${prev.length?`\n\nمقالاتك السابقة كانت:\n«${prev.join('»\n\n«')}»\nغيّر أسلوبك ومداخلك وعناوينك تماماً عنها.`:''}`},
       {role:'user',content:roundBrief(r)}
-    ],2000,{temp:1.05,pres:0.8,freq:0.7});
+    ],2000,{temp:0.9,pres:0.35,freq:0.3});
     AI.art['r'+r]=txt;
     try{ localStorage.setItem('splbAiArt',JSON.stringify(AI.art)); }catch(e){}
     body.textContent=txt; $('#artDl').style.display='inline-flex';
