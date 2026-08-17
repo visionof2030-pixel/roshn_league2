@@ -513,6 +513,7 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
       <div class="admin-btns">
         <button class="btn solid" onclick="aiSaveKey()">💾 حفظ وفحص</button>
         <button class="btn" onclick="aiTest()">🧪 اختبار</button>
+        <button class="btn" onclick="aiBench()">⚡ قياس السرعة</button>
         <button class="btn danger" onclick="aiClear()">🗑 استعادة الافتراضي</button>
       </div>
       <div class="note" id="aiNote"></div></div>
@@ -2152,16 +2153,34 @@ async function aiModels(key){
   const all=items.map(m=>m.id).sort();
   return {free, all, list: free.length?free:all};
 }
-/* النماذج الصغيرة ضعيفة جداً في العربية، فنقدّم الكبيرة */
-function pickModel(list){
-  const good=list.filter(i=>!/1b|3b|mini|tiny|small|7b|8b/i.test(i));
-  const pool=good.length?good:list;
-  return pool.find(i=>/deepseek/i.test(i))
-      || pool.find(i=>/qwen.*(235|72|32)b/i.test(i))
-      || pool.find(i=>/llama.*(405|70)b/i.test(i))
-      || pool.find(i=>/mistral-large|command-r-plus/i.test(i))
-      || pool[0] || list[0] || '';
+/* ترتيب النماذج: نوازن بين الذكاء في العربية والسرعة.
+   العائلات الكبيرة أذكى لكن أبطأ، والمتوسطة (‏20–40B) أسرع بجودة قريبة. */
+function scoreModel(id){
+  const s=id.toLowerCase(); let n=0;
+  // جودة العربية
+  if(/qwen/.test(s))            n+=45;   // الأقوى عربياً بين المفتوحة
+  if(/deepseek/.test(s))        n+=40;
+  if(/llama/.test(s))           n+=30;
+  if(/mistral|command/.test(s)) n+=25;
+  if(/gemma|phi/.test(s))       n+=10;
+  // السرعة: الحجم المتوسط أسرع بكثير مع جودة قريبة
+  if(/\b(2[0-9]|3[0-9])b\b/.test(s)) n+=30;        // 20–39B نقطة التوازن
+  if(/\b(1[2-9])b\b/.test(s))        n+=22;
+  if(/\b(7|8|9)b\b/.test(s))         n+=8;
+  if(/\b(70|72)b\b/.test(s))         n+=12;        // أذكى لكن أبطأ
+  if(/\b(235|405|671)b\b/.test(s))   n-=15;        // بطيء جداً على المجاني
+  // إشارات سرعة صريحة
+  if(/flash|turbo|instant|fast|lite|air/.test(s)) n+=25;
+  // نتجنّب الضعيف والمتخصص
+  if(/\b([1-4])b\b|tiny|nano|mini/.test(s)) n-=40;
+  if(/coder|code|math|vision|image|guard|embed|rerank/.test(s)) n-=60;
+  if(/instruct|chat/.test(s)) n+=6;
+  return n;
 }
+function rankModels(list){
+  return [...list].sort((a,b)=>scoreModel(b)-scoreModel(a));
+}
+function pickModel(list){ return rankModels(list)[0] || list[0] || ''; }
 async function ensureModel(){
   if(AI.model) return AI.model;
   const {list}=await aiModels();
@@ -2235,13 +2254,16 @@ async function aiSaveKey(){
     const prefer=pickModel(list);
     AI.model=localStorage.getItem('splbAiModel');
     if(!AI.model||!list.includes(AI.model)){ AI.model=prefer; localStorage.setItem('splbAiModel',AI.model); }
-    $('#aiModel').innerHTML=list.map(i=>`<option value="${i}">${i}</option>`).join('');
+    const ranked=rankModels(list);
+    $('#aiModel').innerHTML=ranked.map((i,idx)=>
+      `<option value="${i}">${idx===0?'⭐ ':''}${i}</option>`).join('');
     $('#aiModel').value=AI.model;
     $('#aiModel').onchange=()=>{ AI.model=$('#aiModel').value;
       localStorage.setItem('splbAiModel',AI.model); aiLoad(); };
     aiLoad();
     n.className='note ok';
-    n.textContent=`سليم · ${list.length} نموذجاً${free.length?' مجانياً':''} · المختار: ${AI.model||'تلقائي'}`;
+    n.textContent=`سليم · ${list.length} نموذجاً${free.length?' مجانياً':''} · `+
+      `المختار تلقائياً: ${AI.model} · القائمة مرتّبة من الأسرع والأذكى`;
   }catch(e){ n.className='note err'; n.textContent='فشل: '+e.message; }
 }
 function aiClear(){
@@ -2249,6 +2271,36 @@ function aiClear(){
   AI.art={}; AI.key=''; AI.model=''; aiLoad();
   $('#aiNote').className='note ok'; $('#aiNote').textContent='حُذف المفتاح والنموذج وكل المقالات';
 }
+/* يقيس زمن الرد الفعلي لأفضل خمسة نماذج ويرشّح الأسرع */
+async function aiBench(){
+  const n=$('#aiNote');
+  if(!AI.key){ n.className='note err'; n.textContent='اضبط المفتاح أولاً'; return; }
+  n.className='note info'; n.textContent='جارٍ القياس…';
+  let list;
+  try{ list=rankModels((await aiModels()).list).slice(0,5); }
+  catch(e){ n.className='note err'; n.textContent='تعذّر جلب القائمة: '+e.message; return; }
+  const keep=AI.model, out=[];
+  for(const m of list){
+    AI.model=m; const t0=performance.now();
+    try{
+      const r=await aiRaw([{role:'user',content:'اكتب جملة عربية واحدة عن كرة القدم.'}],60,{temp:0.7});
+      const ms=Math.round(performance.now()-t0);
+      const ok=!JUNK_RE.test(r) && arabicRatio(r)>0.8;
+      out.push({m,ms,ok});
+      n.textContent=`قيس ${out.length} من ${list.length}…`;
+    }catch(e){ out.push({m,ms:null,ok:false}); }
+  }
+  const good=out.filter(x=>x.ms&&x.ok).sort((a,b)=>a.ms-b.ms);
+  AI.model = good[0] ? good[0].m : keep;
+  localStorage.setItem('splbAiModel',AI.model); aiLoad();
+  $('#aiModel').value=AI.model;
+  n.className = good.length?'note ok':'note err';
+  n.innerHTML = good.length
+    ? `اعتُمد الأسرع: <b>${AI.model}</b><br>`+
+      out.map(x=>`${x.ok&&x.ms?'✅':'❌'} ${x.m} — ${x.ms?x.ms+' مللي ثانية':'فشل'}`).join('<br>')
+    : 'لم ينجح أي نموذج — جرّب مفتاحاً آخر';
+}
+
 async function aiTest(){
   const n=$('#aiNote'); n.className='note info'; n.textContent='جارٍ الاختبار…';
   try{ const t=await aiCall([{role:'user',content:'قل جملة قصيرة تعرّف فيها بنفسك.'}],120,{temp:0.9});
@@ -3103,7 +3155,7 @@ Object.assign(window,{openPick,openMatch,openPlayer,loadAll,hide,starsMode,board
   renderNews,renderSearch,renderCards,openClubCards,openBulk,setBulk,shareLink,syncLive,fetchLive,mpTab,
   checkName,useName,normName,mergeNames,fillMerge,coachNext,coachSkip,coachSkipAll,coachSync,
   aiSaveKey,aiTest,aiClear,openChat,sendChat,askQ,writeArticle,downloadArticle,showArticle,
-  aiModels,ensureModel});
+  aiModels,ensureModel,aiBench,rankModels,scoreModel});
 </script>
 </body>
 </html>
