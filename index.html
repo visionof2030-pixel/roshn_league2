@@ -1632,7 +1632,8 @@ function matchEvents(f){
     const k=id+'|'+el;
     if(!map[k] || v>map[k].v){
       const pl=S.byPlayer[el];
-      map[k]={id,label,v,team,name:pl?pl.name:('لاعب '+el)};
+      const raw=pl?pl.name:('لاعب '+el);
+      map[k]={id,label,v,team,name:playerAr(raw,team)};
     }
   };
   // ١) ما ينشره fixtures
@@ -2158,6 +2159,53 @@ function exportCSV(){
 /* ============================================================
    كابتن هبد — مساعد ذكي عبر OpenRouter (نسخة تجريبية)
    ============================================================ */
+/* ============================================================
+   قوائم الأندية · تعريب الأسماء · انتقالات الموسم
+   ============================================================ */
+const ROSTER={"8":{"n":"النصر","GK":["Bento","Nawaf Al-Aqidi","Raghed Al-Najjar"],"DEF":["Iñigo Martínez","Abdulelah Al-Amri","Sultan Al-Ghannam","Nawaf Boushal"],"MID":["Ali Al-Hassan","Abdullah Al-Khaibari","Sami Al-Najei","Saad Al-Nasser","Ayman Yahya","Samu Costa"],"FWD":["Cristiano Ronaldo","João Félix","Sadio Mané","Kingsley Coman","Abdulrahman Ghareeb","Abdullah Al-Hamdan","Mohammed Maran"]},"4":{"n":"الهلال","GK":["Yassine Bounou","Mohammed Al Yami","Mohammed Al-Owais","Mathieu Patouillet"],"DEF":["Mohammed Mahzari","Kalidou Koulibaly","Yusuf Akçiçek","Ali Al Bulayhi","Theo Hernández","Moteb Al-Harbi","Mohammed Al-Sarnoukh","Ali Lajami","Hassan Al-Tambakti","Hamad Al-Yami"],"MID":["Nasser Al-Dawsari","Rúben Neves","Murad Al-Hawsawi","Sergej Milinković-Savić","Sultan Mandash","Mohamed Kanno","Saïmon Bouabré","Sabri Dahal","Abdullah Al-Enazi"],"FWD":["Darwin Núñez","Karim Benzema","Malcom","Salem Al-Dawsari","Crysencio Summerville","Mohammed Meïté","Nawaf Al-Habashi"]},"1":{"n":"الأهلي","GK":["Édouard Mendy","Abdulrahman Al-Sanbi","Abdullah Abdo"],"DEF":["Roger Ibañez","Merih Demiral","Abubacarr Sedi Kinteh","Rayan Hamed","Mohammed Sulaiman","Matteo Dams","Saad Balobaid","Abdulelah Al-Khaibari","Yazan Madani","Ali Majrashi","Mohammed Abdulrahman"],"MID":["Ziyad Al-Johani","Eid Al-Muwallad","Valentin Atangana","Enzo Millot","Galeno","Saleh Abu Al-Shamat","Matheus Gonçalves","Yaseen Al-Zubaidi"],"FWD":["Ivan Toney","Ricardo Mathias","Firas Al-Buraikan"]},"6":{"n":"الاتحاد","GK":["Predrag Rajković","Mohammed Al-Absi","Osama Al-Mermesh"],"DEF":["Danilo Pereira","Jan-Carlo Simić","Stephane Keller","Saad Al-Mousa","Muhannad Al-Shanqeeti","Hassan Kadesh","Ahmed Sharahili","Faris Abdi","Ahmed Al-Julaydan","Fawaz Al-Saqour","Muath Faqeehi","Mohammed Ali Barnawi"],"MID":["Houssem Aouar","Dion Lopy","Mukhtar Ali","Mahamadou Doumbia","Farhah Al-Shamrani","Rakan Kaabi","Abdulelah Hawsawi","Hamed Al-Ghamdi","Bryant Ortega","Nawaf Al-Jadaani","Mohammed Fallatah"],"FWD":["Moussa Diaby","Steven Bergwijn","Youssef En-Nesyri","Roger Fernandes","George Ilenikhena","Marwan Al-Sahafi","Ahmed Al-Ghamdi","Abdulrahman Al-Obud","Saleh Al-Shehri"]},"12":{"n":"القادسية","GK":["Koen Casteels","Ahmed Al-Kassar","Meshary Sanyor"],"DEF":["Gastón Álvarez","Nacho Fernández","Waleed Al-Ahmad","Jehad Thakri","Carlos Jiménez","Souffian El Karouani","Yasser Al-Shahrani","Mohammed Qassim","Mohammed Abu Al-Shamat"],"MID":["Julian Weigl","Ibrahim Mahnashi","Ahmed Al-Siyahi","Cameron Puertas","Musab Al-Juwayr","Aarón Martín","Ali Hazazi","Eyad Housa","Nahitan Nández","Otávio","Miguel Carvalho"],"FWD":["Christopher Bonsu Baah","Turki Al-Ammar","Gabriel Carvalho","Iker Almena","Mohammed Al-Qahtani","Haitham Asiri","Mateo Retegui","Julián Quiñones","Jerry Afriyie","Guga","Abdullah Al-Salem","Sultan Harun"]},"5":{"n":"الاتفاق","GK":["Marek Rodák","Ahmad Al-Rehaili","Abdulbasit Hawsawi","Turki Ba Al-Jawsh"],"DEF":["Jack Hendry","Abdullah Madu","Abdulbasit Hindi","Meshal Al-Sibyani","Wissem Chaouali","Mishal Al-Alaeli","Radhi Al-Otaibi","Madallah Al-Olayan","Awad Dahal","Abdullah Khateeb"],"MID":["Mukhtar Ali","Álvaro Medrán","Ondrej Duda","Abdulrahman Nabza","Abdulhakim Maghfouri","Faris Al-Ghamdi"],"FWD":["Khalid Al-Ghannam","Matija Gluscevic","João Costa","Mohau Nkota","Jalal Al-Salem","Ziyad Al-Ghamdi","Moussa Dembélé"]},"15":{"n":"الحزم","GK":["Yazan Al-Ruwaili","Bruno Varela","Ibrahim Zaid","Majed Al-Ghamdi"],"DEF":["Saud Al-Rashed","Mohamed Amine Ben Hamida","Sultan Tanker","Mohammed Issa","Farhan Al-Aazmi","Abdullah Al-Shanqiti","Ahmed Al-Nakhli","Abdurahman Al-Dakheel","Khalid Al-Subaie","Abdulaziz Al-Harbi","Ayman Al-Hujaili"],"MID":["Hassan Idris","Amadou Bamba Dieng","Mory Konaté","Amir Sayoud","Bonheur Mugisha","Abdulaziz Al-Dhuwayhi","Aboubacar Bah","Youssouf Alio Oumarou","Mohammed Al-Darwish","Ahmed Al-Shamrani"],"FWD":["Nawaf Al-Bishri","Khalid Faisal Hasan Abduljawad","Afimico Pululu","Waleed Al-Shanqiti","Sofiane Bendebka","Abdulrazzaq Awaji","Mohammed Turki Al-Hamdani"]},"14":{"n":"نيوم","GK":["Marcin Bułka","Luís Maximiano","Raed Ozaybi","Abdulrahman Dagriri","Mohammed Al-Hakim"],"DEF":["Malang Sarr","Nathan Zézé","Khalifah Al-Dawsari","Mohammed Waleed Al-Dossary","Mohammed Dakhilallah Al-Dawsari","Mohannad Abu Taha","Islam Hawsawi","Abdulmalik Al-Oyayari","Mohammed Al-Burayk","Nawaf Al-Gulaymish","Khaled Al-Rammah"],"MID":["Amadou Koné","Faisal Al-Ghamdi","Abbas Al-Hassan","Alaa Hejji","Riyadh Sharahili","Abdulaziz Noor"],"FWD":["Saïd Benrahma","Georgios Masouras","Khalil Al-Absi","Ahmed Al-Anazi","Muhanad Al-Saad","Alexandre Lacazette","Haroune Camara","Thamer Al-Khaibri","Abdulaziz Al-Othman"]},"13":{"n":"الخلود","GK":["Hamed Al-Shanqiti","Muhannad Al-Yahya","Fares Bandar Al-Zahrani"],"DEF":["Edgaras Utkus","Shaquille Pinas","Mansour Camara","Abdulrahman Al-Obaid","Yazan Madani","Sultan Al-Shehri","Rashid Al-Mutairi","Ramzi Solan","Odai Abdulghani"],"MID":["Seydouba Cissé","John Buckley","Iker Kortajarena","Abdulrahman Al-Dawsari","Mohammed Al-Rashidi","Adam Berry","Abdulaziz Al-Aliwa","Mohammed Sawaan"],"FWD":["Coba da Costa","Ramiro Enrique","Julien Domingues","Yaseen Al-Zubaidi","Abdullah Al-Ajyan","Abdulmalik Al-Harbi"]},"11":{"n":"التعاون","GK":["Mailson","Abdulquddus Atiah","Abdulrahman Al-Ghamdi"],"DEF":["Awn Al-Saluli","Moustapha Sémbène","Muteb Al-Mufarrij","Turki Al-Jaadi","Adeeb Al-Hassan","Bassam Al-Hurayji"],"MID":["Aschraf El Mahdioui","Abdulmalik Al-Marwani","Rakan Al-Tulayhi","Mohammed Al-Saedi","Saif Rajab","Abdulrahman Hindi"],"FWD":["Marin Petkov","Mohammed Al-Kuwaykibi","Fahad Al-Rashidi","Mohammed Al-Aqel","Abderrazak Hamdallah","Younes El Bahraoui","Keshim Al-Qahtani"]},"7":{"n":"الخليج","GK":["Anthony Moris","Mohammed Al-Ibrahim","Mohammed Al-Ghanem","Marwan Al-Haidari"],"DEF":["Kiki Kouyaté","Mohammed Al-Khabrani","Abdullah Al-Hafith","Ahmed Asiri","Pedro Rebocho","Abdullah Al-Ammar","Ali Al-Shaafi","Bandar Nasser","Saeed Al-Hamsal","Hamad Al-Jayzani","Arif Al-Haydar","Raed Al-Shanqiti"],"MID":["Omar Mascarell","Miguel Crespo","Angelo Fulgini","Bader Munshi","Majed Kanabah","Abdoulie Mboge","Ali Abdulraouf","Mohammed Al-Abdullah","Faisal Al-Bakr"],"FWD":["Musa Barrow","Saleh Al-Amri","Hussain Al-Eissa","Abdullah Al-Zaynaldeen","Nawaf Al-Saadi","Mansour Hamzi","Joshua King","Hussain Al-Sultan","Babucarr Seye","Theyab Absa","Abdulmajeed Al-Khathami","Witcha"]},"16":{"n":"أبها","GK":["Donovan Léon","Mustafa Malayekah","Abdulrahman Al-Bouq"],"DEF":["Abdou Diallo","Mohammed Al-Dossary","Safwan Al-Johani","Juriën Gaari","Manaf Abu Yabis","Moayad Mohammed","Abdullah Al-Fahad","Mohammed Al-Oufi","Hazim Al-Zahrani","Hamed Al-Mousa","Dawood Al-Tarif","Hamad Al-Bishi"],"MID":["Abdulkarim Darisi","Faisal Al-Sibyani","Loreintz Rosier","Majed Dawran","Nasser Al-Daajani","Muralha","Mohammed Al-Hamsal","Bader Al-Mutairi","Mohammed Al-Qahtani","Ali Mubarki"],"FWD":["Michy Batshuayi","Hassan Al-Sulays","Hamoud Al-Shammari","Waleed Asiri","Kamil Boumedmed","Sylla Sow"]},"3":{"n":"الفيحاء","GK":["Orlando Mosquera","Abdulraouf Al-Duqayl","Osama Al-Thumairy","Sattam Al-Shammari"],"DEF":["Paulo Oliveira","Mukhir Al-Rashidi","Ziyad Al-Sahafi","Mohammed Al-Baqawi","Ahmed Bamasoud","Ali Al-Harshan","Mohammed Al-Dowaish"],"MID":["Hugo Moura","Alfa Semedo","Nawaf Al-Harthi","Mansor Al-Beshe","Abdulhadi Al-Harajin","Abdullah Al-Qahtani","Ali Al-Hussain","Fahad Al-Hubayshi"],"FWD":["Fashion Sakala","Jason Remeseiro","Silvère Ganvoula","Lázaro","Rayan Enad","Ammar Al-Khaibari","Malek Al-Abdulmenem","Mouath Al-Habib"]},"18":{"n":"الدرعية","GK":["Nikola Vasilj","Amin Al-Bukhari","Muteb Sharahili","Waleed Abdullah"],"DEF":["Qassem Lajami","Omar Colley","Saeed Al-Rubaie","Suleiman Saeed","Abdulaziz Al-Faraj","Sultan Farhan","Fahad Al-Obaid","Hussain Al-Zarie","Abdulelah Al-Jaaferi"],"MID":["Idrissa Gana Gueye","Abdulilah Al-Malki","Ziyad Al-Qahtani","Faisal Al-Mutairi","Issam Al-Qarni","Hussain Al-Qahtani","Mohamed Hameran","Taher Wadi","Hattan Bahbri"],"FWD":["Gaëtan Laborde","Georges-Kévin N'Koudou","Óscar Rodríguez","Meshari Al-Nemer","Saleh Al-Rahmani","Khalid Al-Asiri","Clayton Diandy","Abdullah Al-Zaid"]},"9":{"n":"الرياض","GK":["Milan Borjan","Jan Petek","Abdulrahman Hashim","Imad Adnan Al-Fida"],"DEF":["Osama Al-Bawardi","Sulaiman Hazazi","Mohammed Al-Khaibari","Abdullah Hassoun","Hussein Al-Nuwaqi","Victor Lekhal","Ammar Al-Harfi","Ahmed Al-Siyahi","Ahmed Khatir","Marzouq Al-Tambakti"],"MID":["Mohammed Al-Saeed","Saud Zaydan","Ibrahim Bayesh","Nawaf Al-Abed","Khalil Al-Absi","Teddy Shubili","Nasser Al-Bishi","Mohammed Sahlouli","Khalid Al-Asbahi","Ismaila Soro","Antonio José de Carvalho","Essam Bahri","Mohammed Al-Qahtani","Yahya Al-Shehri","Fahad Al-Sobhi"],"FWD":["Mamadou Sylla","Teddy Okou","Luca Ramirez","Leandro Antunes","Talal Al-Dhafeeri","Sultan Haroun","Mahmoud Hassan Trezeguet"]},"17":{"n":"الفيصلي","GK":["Mohammed Al-Hasawi","Salem Qaboos","Sadiq Fallatah"],"DEF":["Abdoulaye Seck","Andrei Girotto","Fernando Pacheco","Mohammed Jahfali","Raphael Silva","Abdullah Al-Dosari","Abdullah Bin Subayt","Yaseen Barnawi","Munif Al-Dosheri","Mohammed Al-Shanqiti","Abdulelah Nassief","Meshal Haddad","Moayad Saleem","Hassan Al-Harbi"],"MID":["Jaime Seoane","Eduardo Henrique","Jaber Issa","Ahmad Al-Badah","Ibrahima Ndiaye","Malik Hamza","Morato","Mohammed Al-Aqeel","Ayman Al-Sahli","Abdullah Al-Mutairi","Murad Hamzah","Wael Kadan","Abdulrahman Al-Sharif","Saud Haddad","Rayan Idris","Ziyad Sultan Abdullah"],"FWD":["Alexandre Mendy","Christian Bassogog","Ahmed Abdu","Abdullah Al-Mogren","Luvannor","Fahad Al-Dossari","Meshari Abdullah Shetaimi"]},"10":{"n":"الشباب","GK":["Mohammed Al-Mahasneh","Abdulaziz Al-Awairdhi","Marcelo Grohe","Moussa Kamara","Meshal Saad Mutaib"],"DEF":["Tin Jedvaj","Mamadou Thierno Barry","Lazar Stojanovic","Mohammed Al-Shwirekh","Wesley Hoedt","Ali Makki","Mobarak Al-Rajeh","Dhari Al-Anazi","Hussain Al-Sibyani","Sultan Al-Anzi","Mohamed Al-Thani","Mohammed Harbush","Amjad Ali","Abdullah Jaman"],"MID":["Yacine Adli","Ali Al-Asmari","Awad Al-Nashri","Josh Brownhill","Vincent Sierro","Nawaf Al-Osaimi","Abdulaziz Al-Hadhood","Faisal Al-Sibyani","Nasser Al-Sadi","Abdulaziz Al-Othman"],"FWD":["Yannick Carrasco","Daniel Podence","Abdullah Matuq","Carlos Júnior","Hammam Al-Hammami","Roger Martínez","Majed Abdullah","Hisham Al-Dubais"]},"2":{"n":"الفتح","GK":["Habib Al-Watyan","Abdulaziz Al-Suwailem"],"DEF":["Faisal Darsi","Fawaz Al-Hamad","Hussain Qasim","Saeed Baattia","Sattam Al-Tumbukti","Ziyad Al-Jari"],"MID":["Zaydou Youssouf","Mehdi Al-Aboud","Abdulaziz Al-Fawaz","Mohammed Al-Sahihi","Jordan Harrison"],"FWD":["Mourad Batna","Jefferson Ramos","Fahad Aqeel Al-Zubaidi","Faisal Al-Abdulwahed","Matheus Machado","Abdullah Al-Mogren","Ali Al-Masoud","Saad Al-Sharfa"]}};
+const AR_NAME={"Cristiano Ronaldo":"كريستيانو رونالدو","João Félix":"جواو فيليكس","Sadio Mané":"ساديو ماني","Kingsley Coman":"كينغسلي كومان","Samu Costa":"سامو كوستا","Iñigo Martínez":"إينيغو مارتينيز","Bento":"بينتو","Nawaf Al-Aqidi":"نواف العقيدي","Abdulelah Al-Amri":"عبدالإله العمري","Sultan Al-Ghannam":"سلطان الغنام","Ali Al-Hassan":"علي الحسن","Abdullah Al-Khaibari":"عبدالله الخيبري","Sami Al-Najei":"سامي النجعي","Ayman Yahya":"أيمن يحيى","Abdulrahman Ghareeb":"عبدالرحمن غريب","Abdullah Al-Hamdan":"عبدالله الحمدان","Saad Al-Nasser":"سعد الناصر","Nawaf Boushal":"نواف بوشل","Raghed Al-Najjar":"راغد النجار","Mohammed Maran":"محمد مران","Karim Benzema":"كريم بنزيما","Yassine Bounou":"ياسين بونو","Kalidou Koulibaly":"كاليدو كوليبالي","Rúben Neves":"روبن نيفيز","Sergej Milinković-Savić":"سيرجي ميلينكوفيتش سافيتش","Salem Al-Dawsari":"سالم الدوسري","Nasser Al-Dawsari":"ناصر الدوسري","Malcom":"مالكوم","Darwin Núñez":"دارون نونيز","Theo Hernández":"ثيو هيرنانديز","Yusuf Akçiçek":"يوسف أكتشيتشيك","Ali Al Bulayhi":"علي البليهي","Hassan Al-Tambakti":"حسن تمبكتي","Mohamed Kanno":"محمد كنو","Ali Lajami":"علي لاجامي","Mohammed Al-Owais":"محمد العويس","Sabri Dahal":"صبري دحل","Mohammed Al-Sarnoukh":"محمد الصرنوخ","Nawaf Al-Habashi":"نواف الحبشي","Abdullah Al-Enazi":"عبدالله العنزي","Crysencio Summerville":"كريسينسيو سامرفيل","Moteb Al-Harbi":"متعب الحربي","Mohammed Mahzari":"محمد محزري","Édouard Mendy":"إدوارد مندي","Ivan Toney":"إيفان توني","Riyad Mahrez":"رياض محرز","Roger Ibañez":"روجر إيبانيز","Merih Demiral":"مريح ديميرال","Enzo Millot":"إنزو ميو","Galeno":"غالينو","Firas Al-Buraikan":"فراس البريكان","Valentin Atangana":"فالنتين أتانغانا","Matheus Gonçalves":"ماتيوس غونسالفيس","Ziyad Al-Johani":"زياد الجهني","Saad Balobaid":"سعد بلعبيد","Abubacarr Sedi Kinteh":"أبوبكر سيدي كينتيه","Ali Majrashi":"علي مجرشي","Yazan Madani":"يزن مدني","Predrag Rajković":"بريدراغ رايكوفيتش","Houssem Aouar":"حسام عوار","Moussa Diaby":"موسى ديابي","Steven Bergwijn":"ستيفن بيرخفاين","Youssef En-Nesyri":"يوسف النصيري","Danilo Pereira":"دانيلو بيريرا","Saleh Al-Shehri":"صالح الشهري","Ahmed Al-Ghamdi":"أحمد الغامدي","Hassan Kadesh":"حسن كادش","Dion Lopy":"ديون لوبي","Rakan Kaabi":"راكان كعبي","Fawaz Al-Saqour":"فواز الصقور","Ahmed Sharahili":"أحمد شراحيلي","Muhannad Al-Shanqeeti":"مهند الشنقيطي","Marwan Al-Sahafi":"مروان الصحفي","Koen Casteels":"كوين كاستيلس","Nacho Fernández":"ناتشو فرنانديز","Julian Weigl":"يوليان فايغل","Nahitan Nández":"ناهيتان نانديز","Otávio":"أوتافيو","Mateo Retegui":"ماتيو ريتيغي","Julián Quiñones":"خوليان كينيونيس","Yasser Al-Shahrani":"ياسر الشهراني","Musab Al-Juwayr":"مصعب الجوير","Haitham Asiri":"هيثم عسيري","Cameron Puertas":"كاميرون بويرتاس","Gastón Álvarez":"غاستون ألفاريز","Souffian El Karouani":"سفيان الكرواني","Mohammed Al-Qahtani":"محمد القحطاني","Turki Al-Ammar":"تركي العمار","Christopher Bonsu Baah":"كريستوفر بونسو با","Miguel Carvalho":"ميغيل كارفاليو","Moussa Dembélé":"موسى ديمبيلي","Jack Hendry":"جاك هيندري","Abdullah Madu":"عبدالله مادو","Khalid Al-Ghannam":"خالد الغنام","Ondrej Duda":"أوندري دودا","Marek Rodák":"ماريك رودك","Álvaro Medrán":"ألفارو ميدران","Mohau Nkota":"موهاو نكوتا","Afimico Pululu":"أفيميكو بولولو","Sofiane Bendebka":"سفيان بندبكة","Bruno Varela":"برونو فاريلا","Amir Sayoud":"أمير سعيود","Mory Konaté":"موري كوناتيه","Amadou Bamba Dieng":"أمادو بامبا ديينغ","Mohamed Amine Ben Hamida":"محمد أمين بن حميدة","Yazan Al-Ruwaili":"يزن الرويلي","Marcin Bułka":"مارسين بولكا","Alexandre Lacazette":"ألكسندر لاكازيت","Saïd Benrahma":"سعيد بن رحمة","Malang Sarr":"مالانغ سار","Nathan Zézé":"ناثان زيزي","Georgios Masouras":"جورجيوس ماسوراس","Amadou Koné":"أمادو كوني","Luís Maximiano":"لويس ماكسيميانو","Mohammed Al-Burayk":"محمد البريك","Haroune Camara":"هارون كمارا","Thamer Al-Khaibri":"ثامر الخيبري","Khalid Al-Rammah":"خالد الرمة","Seydouba Cissé":"سيدوبا سيسيه","Shaquille Pinas":"شاكيل بيناس","Edgaras Utkus":"إدغاراس أوتكوس","Ramiro Enrique":"راميرو إنريكي","Coba da Costa":"كوبا دا كوستا","John Buckley":"جون باكلي","Abderrazak Hamdallah":"عبدالرزاق حمدالله","Marin Petkov":"مارين بيتكوف","Mailson":"مايلسون","Aschraf El Mahdioui":"أشرف المهديوي","Younes El Bahraoui":"يونس البحراوي","Turki Al-Jaadi":"تركي الجدعاني","Moustapha Sémbène":"مصطفى سيمبين","Rakan Al-Tulayhi":"راكان الطليحي","Awn Al-Saluli":"عون السلولي","Mohammed Al-Saedi":"محمد السعيدي","Abdulrahman Hindi":"عبدالرحمن هندي","Musa Barrow":"موسى بارو","Kiki Kouyaté":"كيكي كوياتيه","Omar Mascarell":"عمر مسكاريل","Miguel Crespo":"ميغيل كريسبو","Angelo Fulgini":"أنجيلو فولجيني","Anthony Moris":"أنتوني موريس","Joshua King":"جوشوا كينغ","Pedro Rebocho":"بيدرو ريبوشو","Nawaf Al-Saadi":"نواف السعدي","Abdullah Al-Ammar":"عبدالله العمار","Babucarr Seye":"بابوكار سيي","Michy Batshuayi":"ميشي باتشواي","Abdou Diallo":"عبدالله ديالو","Donovan Léon":"دونوفان ليون","Mustafa Malayekah":"مصطفى ملائكة","Loreintz Rosier":"لورينتز روزييه","Abdulkarim Darisi":"عبدالكريم دارسي","Majed Dawran":"ماجد دوران","Safwan Al-Johani":"صفوان الجهني","Sylla Sow":"سيلا سو","Juriën Gaari":"يوريين غاري","Faisal Al-Sibyani":"فيصل الصبياني","Muralha":"مورالها","Orlando Mosquera":"أورلاندو موسكيرا","Paulo Oliveira":"باولو أوليفيرا","Hugo Moura":"هوغو مورا","Alfa Semedo":"ألفا سيميدو","Fashion Sakala":"فاشون ساكالا","Silvère Ganvoula":"سيلفير غانفولا","Lázaro":"لازارو","Abdulhadi Al-Harajin":"عبدالهادي الحراجين","Abdullah Al-Qahtani":"عبدالله القحطاني","Nikola Vasilj":"نيكولا فاسيلي","Omar Colley":"عمر كولي","Idrissa Gana Gueye":"إدريسا غانا غي","Gaëtan Laborde":"غايتان لابورد","Georges-Kévin N'Koudou":"جورج كيفن نكودو","Óscar Rodríguez":"أوسكار رودريغيز","Abdulilah Al-Malki":"عبدالإله المالكي","Hattan Bahbri":"حتان باهبري","Waleed Abdullah":"وليد عبدالله","Milan Borjan":"ميلان بوريان","Nawaf Al-Abed":"نواف العابد","Yahya Al-Shehri":"يحيى الشهري","Ismaila Soro":"إسماعيلا سورو","Mamadou Sylla":"مامادو سيلا","Victor Lekhal":"فيكتور لخال","Mahmoud Hassan Trezeguet":"محمود حسن تريزيغيه","Teddy Okou":"تيدي أوكو","Abdoulaye Seck":"عبدالله سيك","Andrei Girotto":"أندريه جيروتو","Fernando Pacheco":"فيرناندو باتشيكو","Mohammed Jahfali":"محمد جحفلي","Alexandre Mendy":"ألكسندر ميندي","Christian Bassogog":"كريستيان باسوجوج","Jaime Seoane":"خايمي سيواني","Ahmed Abdu":"أحمد عبده","Abdullah Al-Mogren":"عبدالله المقرن","Raphael Silva":"رافاييل سيلفا","Luvannor":"لوفانور","Eduardo Henrique":"إدواردو هنريكي","Yannick Carrasco":"يانيك كاراسكو","Daniel Podence":"دانييل بودينس","Yacine Adli":"ياسين عدلي","Josh Brownhill":"جوش براونهيل","Vincent Sierro":"فينسنت سييرو","Wesley Hoedt":"ويسلي هوت","Tin Jedvaj":"تين يدفاي","Roger Martínez":"روجر مارتينيز","Marcelo Grohe":"مارسيلو غروهي","Carlos Júnior":"كارلوس جونيور","Awad Al-Nashri":"عوض الناشري","Ali Al-Asmari":"علي الأسمري","Mourad Batna":"مراد باطنة","Zaydou Youssouf":"زيدو يوسف","Matheus Machado":"ماتيوس ماتشادو","Jefferson Ramos":"جيفرسون راموس","Jordan Harrison":"جوردان هاريسون","Habib Al-Watyan":"حبيب الوطيان"};
+const TRANSFERS=[{"p":"مارسيلو بروزوفيتش","k":"انتهاء عقد","f":"النصر","t":"","d":"30-06-2026"},{"p":"جون دوران","k":"إعارة","f":"النصر","t":"بنفيكا","d":"20-07-2026"},{"p":"جواو فيليكس","k":"انتقال","f":"تشيلسي","t":"النصر","d":"01-07-2026"},{"p":"سامو كوستا","k":"انتقال","f":"ريال مايوركا","t":"النصر","d":"01-08-2026"},{"p":"جواو كانسيلو","k":"انتقال","f":"الهلال","t":"برشلونة","d":"18-08-2026"},{"p":"ماركوس ليوناردو","k":"انتقال","f":"الهلال","t":"أياكس","d":"17-07-2026"},{"p":"محمد القحطاني","k":"انتقال","f":"الهلال","t":"القادسية","d":"06-07-2026"},{"p":"عبدالله رديف","k":"نهاية إعارة","f":"الفيحاء","t":"الهلال","d":"30-06-2026"},{"p":"عبدالكريم دارسي","k":"إعارة","f":"الهلال","t":"أبها","d":"22-07-2026"},{"p":"أحمد أبو راسين","k":"رحيل","f":"الهلال","t":"","d":"غير محدد"},{"p":"عبدالله العنزي","k":"انتقال","f":"الفتح","t":"الهلال","d":"04-07-2026"},{"p":"صبري دحل","k":"انتقال","f":"الفيحاء","t":"الهلال","d":"04-07-2026"},{"p":"محمد العويس","k":"انتقال","f":"العلا","t":"الهلال","d":"19-07-2026"},{"p":"محمد الصرنوخ","k":"انتقال","f":"الفتح","t":"الهلال","d":"22-07-2026"},{"p":"نواف الحبشي","k":"انتقال","f":"الحزم","t":"الهلال","d":"21-07-2026"},{"p":"فرانك كيسييه","k":"انتهاء عقد","f":"الأهلي","t":"","d":"30-06-2026"},{"p":"رياض محرز","k":"انتهاء عقد","f":"الأهلي","t":"","d":"30-06-2026"},{"p":"أبوبكر سيدي كينتيه","k":"انتقال","f":"ترومسو","t":"الأهلي","d":"19-06-2026"},{"p":"إدوارد سبيرتسيان","k":"انتقال","f":"كراسنودار","t":"الأهلي","d":"07-07-2026"},{"p":"فرانسيسكو ترينكاو","k":"انتقال","f":"سبورتينغ","t":"الأهلي","d":"18-07-2026"},{"p":"مشعل المطيري","k":"انتقال","f":"أبها","t":"الأهلي","d":"01-07-2026"},{"p":"نايف مسعود","k":"انتقال","f":"الفتح","t":"الأهلي","d":"22-07-2026"},{"p":"كريم بنزيما","k":"انتقال","f":"الاتحاد","t":"الهلال","d":"03-02-2026"},{"p":"راكان كعبي","k":"انتقال","f":"الفيحاء","t":"الاتحاد","d":"07-07-2026"},{"p":"عوض الناشري","k":"رحيل","f":"الاتحاد","t":"","d":"30-06-2026"},{"p":"عبدالعزيز البيشي","k":"رحيل","f":"الاتحاد","t":"","d":"30-06-2026"},{"p":"ريكاردو كارابالو","k":"انتقال","f":"الاتحاد","t":"إف كي سراييفو","d":"غير محدد"},{"p":"أوناي هيرنانديز","k":"نهاية إعارة","f":"","t":"الاتحاد","d":"30-06-2026"},{"p":"فواز الصقور","k":"نهاية إعارة","f":"","t":"الاتحاد","d":"30-06-2026"},{"p":"تيجاني رايندرز","k":"قيد الإتمام","f":"مانشستر سيتي","t":"القادسية","d":"18-08-2026"},{"p":"سفيان الكرواني","k":"انتقال","f":"أوتريخت","t":"القادسية","d":"غير محدد"},{"p":"عبدالرزاق حمدالله","k":"انتقال","f":"الشباب","t":"التعاون","d":"01-07-2026"},{"p":"محمد السعيدي","k":"انتقال","f":"الحزم","t":"التعاون","d":"غير محدد"},{"p":"تركي الجدعاني","k":"انتقال","f":"العربي","t":"التعاون","d":"22-07-2026"},{"p":"يونس البحراوي","k":"انتقال","f":"نهضة بركان","t":"التعاون","d":"22-07-2026"},{"p":"عبدالرحمن هندي","k":"انتقال","f":"العروبة","t":"التعاون","d":"غير محدد"},{"p":"راكان الطليحي","k":"نهاية إعارة","f":"","t":"التعاون","d":"01-07-2026"},{"p":"روجر مارتينيز","k":"رحيل","f":"التعاون","t":"","d":"30-06-2026"},{"p":"أنجيلو فولجيني","k":"انتقال","f":"التعاون","t":"لانس","d":"30-06-2026"},{"p":"رينيه ريفاس","k":"انتقال","f":"التعاون","t":"الوحدة الإماراتي","d":"غير محدد"},{"p":"عبدالإله هوساوي","k":"نهاية إعارة","f":"","t":"الاتحاد","d":"30-06-2026"},{"p":"أحمد الرحيلي","k":"نهاية إعارة","f":"الدرعية","t":"الاتفاق","d":"01-07-2026"},{"p":"جورجينيو فينالدوم","k":"رحيل","f":"الاتفاق","t":"","d":"30-06-2026"},{"p":"فرانسيسكو كالفو","k":"رحيل","f":"الاتفاق","t":"","d":"30-06-2026"},{"p":"أحمد حسن","k":"رحيل","f":"الاتفاق","t":"","d":"30-06-2026"},{"p":"مالانغ سار","k":"انتقال","f":"لانس","t":"نيوم","d":"21-07-2026"},{"p":"أحمد حجازي","k":"رحيل","f":"نيوم","t":"","d":"30-06-2026"},{"p":"سلمان الفرج","k":"رحيل","f":"نيوم","t":"","d":"30-06-2026"},{"p":"عبدالله دوكوريه","k":"رحيل","f":"نيوم","t":"","d":"30-06-2026"},{"p":"مصطفى ملائكة","k":"انتقال","f":"نيوم","t":"أبها","d":"غير محدد"},{"p":"أحمد عبده","k":"انتقال","f":"نيوم","t":"الفيصلي","d":"11-07-2026"},{"p":"عون السلولي","k":"نهاية إعارة","f":"نيوم","t":"التعاون","d":"01-07-2026"},{"p":"أيمن فلاتة","k":"نهاية إعارة","f":"","t":"الأهلي","d":"01-07-2026"},{"p":"ريان ميسي","k":"نهاية إعارة","f":"","t":"ستراسبورغ","d":"01-07-2026"},{"p":"عبدالله العمار","k":"انتقال","f":"الحزم","t":"الخليج","d":"غير محدد"},{"p":"إلياس موكوانا","k":"نهاية إعارة","f":"","t":"الترجي","d":"01-07-2026"},{"p":"عبدالهادي الحراجين","k":"نهاية إعارة","f":"","t":"الفيحاء","d":"01-07-2026"},{"p":"ميغيل كارفاليو","k":"نهاية إعارة","f":"","t":"القادسية","d":"01-07-2026"},{"p":"عمر السومة","k":"رحيل","f":"الحزم","t":"","d":"30-06-2026"},{"p":"فابيو مارتينز","k":"رحيل","f":"الحزم","t":"","d":"30-06-2026"},{"p":"لورينتز روزييه","k":"انتقال","f":"الحزم","t":"أبها","d":"غير محدد"},{"p":"عبدالله القحطاني","k":"انتقال","f":"ضمك","t":"الفيحاء","d":"غير محدد"},{"p":"هوغو مورا","k":"انتقال","f":"فاسكو دا غاما","t":"الفيحاء","d":"15-07-2026"},{"p":"كريس سمولينغ","k":"رحيل","f":"الفيحاء","t":"","d":"30-06-2026"},{"p":"ياسين بن زية","k":"رحيل","f":"الفيحاء","t":"","d":"30-06-2026"},{"p":"ميكيل فيلانويفا","k":"رحيل","f":"الفيحاء","t":"","d":"30-06-2026"},{"p":"جيريمي كانون","k":"رحيل","f":"الفيحاء","t":"","d":"30-06-2026"},{"p":"ماتيوس ماتشادو","k":"نهاية إعارة","f":"لودوغوريتس","t":"الفتح","d":"30-06-2026"},{"p":"خورخي فيليبي","k":"رحيل","f":"الفتح","t":"","d":"30-06-2026"},{"p":"ويسلي ديلغادو","k":"انتقال","f":"الفتح","t":"النصر الإماراتي","d":"غير محدد"},{"p":"ماجد قشيش","k":"نهاية إعارة","f":"","t":"النصر","d":"30-06-2026"},{"p":"عبدالله المقرن","k":"انتقال","f":"الفتح","t":"الفيصلي","d":"غير محدد"},{"p":"سفيان بندبكة","k":"رحيل","f":"الفتح","t":"","d":"30-06-2026"},{"p":"موسى بارو","k":"انتقال","f":"التعاون","t":"الخليج","d":"01-07-2026"},{"p":"كيكي كوياتيه","k":"انتقال","f":"رويال أنتويرب","t":"الخليج","d":"01-07-2026"},{"p":"عمر مسكاريل","k":"انتقال","f":"ريال مايوركا","t":"الخليج","d":"01-07-2026"},{"p":"ميغيل كريسبو","k":"انتقال","f":"باشاك شهير","t":"الخليج","d":"غير محدد"},{"p":"أنجيلو فولجيني","k":"انتقال","f":"لانس","t":"الخليج","d":"غير محدد"},{"p":"نواف السعدي","k":"انتقال","f":"الشباب","t":"الخليج","d":"غير محدد"},{"p":"كونستانتينوس فورتونيس","k":"رحيل","f":"الخليج","t":"","d":"30-06-2026"},{"p":"ديميتريوس كوربيليس","k":"رحيل","f":"الخليج","t":"","d":"30-06-2026"},{"p":"بارت شينكيفيلد","k":"رحيل","f":"الخليج","t":"","d":"30-06-2026"},{"p":"جورجيوس ماسوراس","k":"نهاية إعارة","f":"","t":"أولمبياكوس","d":"30-06-2026"},{"p":"باولو فرنانديز","k":"نهاية إعارة","f":"","t":"أيك أثينا","d":"30-06-2026"},{"p":"ثامر الخيبري","k":"نهاية إعارة","f":"","t":"نيوم","d":"01-07-2026"},{"p":"ميشي باتشواي","k":"انتقال","f":"آينتراخت فرانكفورت","t":"أبها","d":"17-08-2026"},{"p":"عبدالله ديالو","k":"انتقال","f":"العربي","t":"أبها","d":"غير محدد"},{"p":"صفوان الجهني","k":"انتقال","f":"الطائي","t":"أبها","d":"غير محدد"},{"p":"محمد دخيل الله","k":"انتقال","f":"نيوم","t":"أبها","d":"غير محدد"},{"p":"دونوفان ليون","k":"انتقال","f":"أوكسير","t":"أبها","d":"غير محدد"},{"p":"ماجد دوران","k":"انتقال","f":"الاتفاق","t":"أبها","d":"غير محدد"},{"p":"فيصل الصبياني","k":"إعارة","f":"الشباب","t":"أبها","d":"غير محدد"},{"p":"أجي دامبيلي","k":"انتقال","f":"أبها","t":"الأخدود","d":"غير محدد"},{"p":"ياسر يعقوب","k":"انتقال","f":"أبها","t":"العلا","d":"غير محدد"},{"p":"سويلم المنهالي","k":"إعارة","f":"الرياض","t":"الزلفي","d":"22-07-2026"},{"p":"ألكسندر ميندي","k":"انتقال","f":"مونبلييه","t":"الفيصلي","d":"غير محدد"},{"p":"كريستيان باسوجوج","k":"انتقال","f":"الأخدود","t":"الفيصلي","d":"غير محدد"},{"p":"أندريه جيروتو","k":"انتقال","f":"التعاون","t":"الفيصلي","d":"غير محدد"},{"p":"فيرناندو باتشيكو","k":"انتقال","f":"الفتح","t":"الفيصلي","d":"غير محدد"},{"p":"خايمي سيواني","k":"انتقال","f":"هويسكا","t":"الفيصلي","d":"غير محدد"},{"p":"عبدالله سيك","k":"انتقال","f":"","t":"الفيصلي","d":"غير محدد"},{"p":"محمد الفهيد","k":"انتقال","f":"الفيصلي","t":"الجيل","d":"غير محدد"},{"p":"دانييل بودينس","k":"نهاية إعارة","f":"أولمبياكوس","t":"الشباب","d":"01-07-2026"},{"p":"تين يدفاي","k":"انتقال","f":"باناثينايكوس","t":"الشباب","d":"غير محدد"},{"p":"علي الأسمري","k":"إعارة","f":"نيوم","t":"الشباب","d":"غير محدد"},{"p":"جورجي بوشان","k":"انتقال","f":"الشباب","t":"بوليسيا","d":"غير محدد"},{"p":"سعد بلعبيد","k":"نهاية إعارة","f":"","t":"الأهلي","d":"01-07-2026"},{"p":"عبدالعزيز العثمان","k":"انتقال","f":"الشباب","t":"القادسية","d":"غير محدد"},{"p":"علي البليهي","k":"نهاية إعارة","f":"","t":"الهلال","d":"01-07-2026"},{"p":"هارون كمارا","k":"نهاية إعارة","f":"","t":"النصر","d":"01-07-2026"}];
+
+/* فهرس بحث: يربط الاسم المختصر القادم من الـ API باللاعب الكامل وناديه */
+const NAME_IX=(()=>{
+  const ix={};
+  Object.entries(ROSTER).forEach(([tid,o])=>{
+    ['GK','DEF','MID','FWD'].forEach(pos=>(o[pos]||[]).forEach(full=>{
+      const ent={full, ar:AR_NAME[full]||null, team:+tid, pos};
+      const norm=s=>s.toLowerCase().replace(/[^a-zà-ÿ\u0600-\u06FF ]/g,'').trim();
+      ix[norm(full)]=ent;
+      norm(full).split(' ').forEach(w=>{ if(w.length>3 && !ix[w]) ix[w]=ent; });
+    }));
+  });
+  return ix;
+})();
+function normKey(s){ return String(s||'').toLowerCase().replace(/[^a-zà-ÿ\u0600-\u06FF ]/g,'').trim(); }
+
+/* يعيد الاسم العربي إن عُرف، وإلا الاسم كما ورد */
+function playerAr(name, teamId){
+  const k=normKey(name);
+  let e=NAME_IX[k];
+  if(!e){                                  // مطابقة جزئية على الكلمات
+    const words=k.split(' ').filter(w=>w.length>3);
+    for(const w of words){ if(NAME_IX[w] && (teamId==null||NAME_IX[w].team===teamId)){ e=NAME_IX[w]; break; } }
+  }
+  if(e && teamId!=null && e.team!==teamId) {
+    const alt=Object.values(NAME_IX).find(x=>x.team===teamId && normKey(x.full).includes(k));
+    if(alt) e=alt;
+  }
+  return e ? (e.ar||e.full) : name;
+}
+function playerFull(name, teamId){
+  const k=normKey(name); const e=NAME_IX[k]
+    || Object.values(NAME_IX).find(x=>(teamId==null||x.team===teamId)&&normKey(x.full).includes(k));
+  return e ? e.full : name;
+}
+/* انتقالات لاعب أو نادٍ */
+function transfersOf(q){
+  const s=String(q||'');
+  return TRANSFERS.filter(t=>t.p.includes(s)||t.f===s||t.t===s);
+}
+
 const AI_DEFAULT_KEY='';   // يُدخَل من لوحة الإدارة
 const AI_URL='https://openrouter.ai/api/v1';
 const AI={ key:'', model:'', busy:false, hist:[], art:{} };
@@ -2358,6 +2406,8 @@ const AI_PERSONA = `اسمك «كابتن هبد»، المحلل الرياضي
 ما تخترع رقم ولا اسم لاعب ولا نتيجة ولا حدث. كل كلامك من البيانات اللي بين يديك.
 لو ناقصك رقم قل «ما عندي هالمعلومة» ولا تعبي الفراغ بتخمين.
 لا تصف مجريات ما وصلتك (ما تقول «ضغط في الشوط الثاني» وأنت ما تدري).
+عندك قوائم لاعبي الأندية الثمانية عشر وانتقالات الموسم — استخدمها بثقة إن سُئلت عنها.
+لكن ما عندك التشكيلة الأساسية لمباراة معيّنة ولا خطة المدرب، فوضّح الفرق إن سُئلت.
 تجاوب على أي سؤال حتى لو خارج الرياضة، وحاول تفيد قدر ما تقدر.
 لا تقول إنك نموذج لغوي ولا تشرح طريقة شغلك.
 
@@ -2374,7 +2424,27 @@ const AI_PERSONA = `اسمك «كابتن هبد»، المحلل الرياضي
 (هذا القيد يخص المحادثة فقط، أما المقالات والنشرات فلها تعليماتها الخاصة.)`;
 
 /* ---------------- السياق: كل أقسام التطبيق ---------------- */
-function aiContext(){
+/* يحدّد الأندية المذكورة في السؤال */
+function clubsInText(q){
+  const out=[];
+  Object.entries(TEAMS).forEach(([id,t])=>{
+    const bare=t.n.replace(/^ال/,'');
+    if(q.includes(t.n)||q.includes(bare)||q.includes(t.s)) out.push(+id);
+  });
+  return out;
+}
+/* السياق يُبنى حسب السؤال: نرسل ما يلزم فقط لأن نافذة النماذج المجانية محدودة */
+function aiContext(q){
+  q=String(q||'');
+  const ALL=!q;                                  // بلا سؤال (النشرة/المقال) = كل شيء
+  const want=k=>ALL||k;
+  const clubs=clubsInText(q);
+  const askSquad = /تشكيل|قائمة|لاعب|لاعبين|حارس|مدافع|مهاجم|وسط|مركز|من يلعب|منتخب|كشف/.test(q);
+  const askTrans = /انتقال|صفق|تعاقد|ضم|انضم|غادر|رحل|جا|جاء|راح|إعارة|اعارة|جديد|بيع|شرا/.test(q);
+  const askPlayers=/هداف|أهداف|اهداف|صناع|صناعة|بطاق|إنذار|انذار|إيقاف|ايقاف|غياب|إصاب|اصاب|حارس|تصدي/.test(q);
+  const askUsers = /متسابق|توقع|ترتيبنا|فينا|بيننا|نقاط|دقة|سلسلة|بطل الجولة|أدائي|ادائي/.test(q);
+  const askTable = /ترتيب|جدول|صدارة|نقاط|هبوط|متصدر|وصيف/.test(q);
+  const askNext  = /جاي|قادم|الجولة الجاية|توقعك|بكرة|القادمة/.test(q);
   const L=[];
   L.push(`اليوم: ${new Date().toLocaleString('ar-SA',{timeZone:CFG.TZ,dateStyle:'full',timeStyle:'short'})}`);
   L.push(`الجولة الحالية: ${roundName(S.currentRound)} من 34`);
@@ -2389,35 +2459,39 @@ function aiContext(){
   const tbl=Object.values(t).sort((a,b)=>b.pts-a.pts||(b.gf-b.ga)-(a.gf-a.ga));
   if(tbl.some(r=>r.p)) L.push('\nترتيب الدوري (لعب/فوز/تعادل/خسارة/له/عليه/نقاط):\n'+
     tbl.map((r,i)=>`${i+1}. ${tName(r.id)}: ${r.p}/${r.w}/${r.d}/${r.l}/${r.gf}/${r.ga}/${r.pts}`).join('\n'));
+  void askTable;
 
   const done=S.fixtures.filter(f=>outcome(f));
-  if(done.length) L.push('\nنتائج المباريات:\n'+done.map(f=>{
+  if(done.length) L.push('\nنتائج المباريات:\n'+done.slice(ALL?0:-12).map(f=>{
     const ev=matchEvents(f);
     const g=ev.filter(e=>e.id==='goals_scored').map(e=>e.name+(e.v>1?'×'+e.v:'')).join('، ');
     return `ج${f.round} ${tName(f.home)} ${hasScore(f)?f.hs+'-'+f.as:''} ${tName(f.away)}${g?' — أهداف: '+g:''}`;
   }).join('\n'));
 
-  const next=S.fixtures.filter(f=>!hasEnded(f)).slice(0,9);
+  const next=S.fixtures.filter(f=>!hasEnded(f)).slice(0, (ALL||askNext)?9:4);
   if(next.length) L.push('\nالمباريات الجاية:\n'+next.map(f=>{
     const o=aiOdds(f);
     return `ج${f.round} ${tName(f.home)} × ${tName(f.away)} — ${ksaDate(f.kickoff)} ${ksaTime(f.kickoff)} · ترجيح آلي ${o.h}%/${o.d}%/${o.a}%`;
   }).join('\n'));
 
+  const nm=p=>playerAr(p.name,p.team);
+  if(want(askPlayers||askTable||askNext)){
   const sc=S.players.filter(p=>p.goals>0).sort((a,b)=>b.goals-a.goals).slice(0,12);
-  if(sc.length) L.push('\nالهدافين: '+sc.map(p=>`${p.name} (${tName(p.team)}) ${p.goals}`).join('، '));
+  if(sc.length) L.push('\nالهدافين: '+sc.map(p=>`${nm(p)} (${tName(p.team)}) ${p.goals}`).join('، '));
   const as=S.players.filter(p=>p.assists>0).sort((a,b)=>b.assists-a.assists).slice(0,10);
-  if(as.length) L.push('صنّاع اللعب: '+as.map(p=>`${p.name} ${p.assists}`).join('، '));
+  if(as.length) L.push('صنّاع اللعب: '+as.map(p=>`${nm(p)} ${p.assists}`).join('، '));
   const gk=S.players.filter(p=>p.pos===1&&p.saves>0).sort((a,b)=>b.saves-a.saves).slice(0,6);
-  if(gk.length) L.push('الحراس: '+gk.map(p=>`${p.name} (${tName(p.team)}) ${p.saves} تصدية · ${p.cs} شباك نظيفة`).join('، '));
+  if(gk.length) L.push('الحراس: '+gk.map(p=>`${nm(p)} (${tName(p.team)}) ${p.saves} تصدية · ${p.cs} شباك نظيفة`).join('، '));
 
   const cards=S.players.filter(p=>p.yc>0||p.rc>0).sort((a,b)=>(b.rc*4+b.yc)-(a.rc*4+a.yc)).slice(0,12);
-  if(cards.length) L.push('\nالبطاقات: '+cards.map(p=>`${p.name} (${tName(p.team)}) ${p.yc}🟨${p.rc?' '+p.rc+'🟥':''}`).join('، '));
+  if(cards.length) L.push('\nالبطاقات: '+cards.map(p=>`${nm(p)} (${tName(p.team)}) ${p.yc}🟨${p.rc?' '+p.rc+'🟥':''}`).join('، '));
   const risk=S.players.map(p=>({p,c:cardStatus(p)})).filter(x=>x.c.risk||x.c.suspended);
   if(risk.length) L.push('الإيقافات وحافة الإيقاف: '+risk.slice(0,12)
-    .map(x=>`${x.p.name} (${tName(x.p.team)})${x.c.suspended?' موقوف':' باقي له إنذار واحد'}`).join('، '));
+    .map(x=>`${nm(x.p)} (${tName(x.p.team)})${x.c.suspended?' موقوف':' باقي له إنذار واحد'}`).join('، '));
 
   const out=S.players.filter(p=>p.chance<100&&p.news).slice(0,12);
-  if(out.length) L.push('\nالغيابات: '+out.map(p=>`${p.name} (${tName(p.team)}) جاهزية ${p.chance}% — ${p.news}`).join(' | '));
+  if(out.length) L.push('\nالغيابات: '+out.map(p=>`${nm(p)} (${tName(p.team)}) جاهزية ${p.chance}% — ${p.news}`).join(' | '));
+  }
 
   const b=scoreboard();
   if(b.length){
@@ -2432,6 +2506,36 @@ function aiContext(){
     const me=b.find(u=>u.name===S.me);
     if(me) L.push(`\nالمستخدم الحالي: ${S.me} — المركز ${me.rank}، ${me.pts} نقطة، دقة ${me.acc}%، سلسلة ${me.streak||0}`);
   }
+
+  // قوائم الأندية — نرسل النادي المذكور فقط، أو الكل إن لم يُذكر نادٍ
+  if(askSquad || clubs.length){
+    const ids = clubs.length?clubs:Object.keys(ROSTER).map(Number);
+    const cap = clubs.length?ids:ids.slice(0,18);
+    L.push('\n=== قوائم الأندية (الأسماء العربية المعتمدة) ===');
+    cap.forEach(tid=>{
+      const o=ROSTER[tid]; if(!o) return;
+      const line=['GK','DEF','MID','FWD'].map(pos=>{
+        const names=(o[pos]||[]).map(n=>AR_NAME[n]||n);
+        const lbl={GK:'حراس',DEF:'دفاع',MID:'وسط',FWD:'هجوم'}[pos];
+        return names.length?`${lbl}: ${names.join('، ')}`:'';
+      }).filter(Boolean).join(' | ');
+      L.push(`${o.n} — ${line}`);
+    });
+    L.push('هذه قوائم اللاعبين المسجَّلين. لا تملك التشكيلة الأساسية لمباراة بعينها ولا خطط المدربين.');
+  }
+
+  // الانتقالات — عند السؤال عنها أو عن نادٍ بعينه
+  if(askTrans || clubs.length){
+    const rows = clubs.length
+      ? TRANSFERS.filter(t=>clubs.some(c=>t.f===tName(c)||t.t===tName(c)))
+      : TRANSFERS;
+    if(rows.length){
+      L.push('\n=== انتقالات الموسم 2026/27 ===');
+      rows.forEach(t=>L.push(`${t.p}: ${t.k}`+
+        (t.f&&t.t?` من ${t.f} إلى ${t.t}`:(t.f?` من ${t.f}`:` إلى ${t.t}`))+` · ${t.d}`));
+    }
+  }
+  L.push('\nملاحظة: استخدم الأسماء العربية أعلاه حصراً عند ذكر أي لاعب، ولا تترجم بنفسك.');
   return L.join('\n');
 }
 
@@ -2449,8 +2553,8 @@ function openChat(){
     pushMsg('ai','هلا والله 👋 أنا كابتن هبد، محلل التطبيق. اسألني عن أي شي — دوري، أرقام، توقعاتكم، أو أي موضوع ثاني. والنصر بطل بإذن الله 💛');
   }
   $('#chatSug').innerHTML=[
-    'وش رايك في ترتيب الدوري؟','حلّل مباريات النصر','من أفضل متسابق فينا؟',
-    'مين مهدد بالإيقاف؟','مين أخطر هداف؟','وش توقعك للجولة الجاية؟'
+    'وش رايك في ترتيب الدوري؟','عطني قائمة لاعبي النصر','مين جا ومين راح في الهلال؟',
+    'من أفضل متسابق فينا؟','مين مهدد بالإيقاف؟','وش توقعك للجولة الجاية؟'
   ].map(q=>`<button onclick="askQ('${esc(q)}')">${q}</button>`).join('');
   show('#vChat'); setTimeout(()=>$('#chatIn').focus(),300);
 }
@@ -2466,7 +2570,7 @@ async function sendChat(){
   inp.value=''; pushMsg('me',q); AI.busy=true;
   const wait=pushMsg('ai',''); wait.innerHTML='<span class="typing"><i></i><i></i><i></i></span>';
   try{
-    const msgs=[{role:'system',content:AI_PERSONA+'\n\n=== بيانات التطبيق الآن ===\n'+aiContext()}];
+    const msgs=[{role:'system',content:AI_PERSONA+'\n\n=== بيانات التطبيق الآن ===\n'+aiContext(q)}];
     AI.hist.slice(-10).forEach(m=>msgs.push(m));
     msgs.push({role:'user',content:q});
     const a=await aiCall(msgs,420,{temp:0.9,pres:0.3,freq:0.25});
@@ -2516,7 +2620,31 @@ function bulletinBrief(){
   if(tbl.length) L.push('صدارة الترتيب: '+tbl.map((x,i)=>`${i+1}. ${tName(x.id)} ${x.pts}`).join('، '));
 
   const nxt=S.fixtures.filter(f=>!hasEnded(f)).slice(0,4);
-  if(nxt.length) L.push('قادم: '+nxt.map(f=>`${tName(f.home)} × ${tName(f.away)}`).join('، '));
+  if(nxt.length) L.push('قادم: '+nxt.map(f=>{
+    const o=aiOdds(f); return `${tName(f.home)} × ${tName(f.away)} (ترجيح ${o.h}/${o.d}/${o.a})`;}).join('، '));
+
+  // أداء المتسابقين: مقارنات جاهزة للتحليل
+  const bd=scoreboard();
+  if(bd.length){
+    L.push('ترتيب المتسابقين: '+bd.map(u=>
+      `${u.rank}. ${u.name} ${u.pts}ن (صح ${u.ok}/خطأ ${u.no}/دقة ${u.acc}%/سلسلة ${u.streak||0}/جريء ${u.bold||0})`).join(' | '));
+    if(bd.length>1){
+      const top=bd[0], last=bd[bd.length-1];
+      L.push(`الفارق بين المتصدر ${top.name} والأخير ${last.name}: ${top.pts-last.pts} نقطة`);
+      const best=[...bd].sort((a,b)=>b.acc-a.acc)[0];
+      if(best.name!==top.name) L.push(`أدق متسابق: ${best.name} بنسبة ${best.acc}% رغم أنه في المركز ${best.rank}`);
+      const bold=[...bd].sort((a,b)=>(b.bold||0)-(a.bold||0))[0];
+      if(bold.bold) L.push(`أجرأ متسابق: ${bold.name} بـ ${bold.bold} توقع جريء ضد الأغلبية`);
+      const seq=[...bd].sort((a,b)=>(b.streak||0)-(a.streak||0))[0];
+      if(seq.streak) L.push(`أطول سلسلة صحيحة: ${seq.name} بـ ${seq.streak} توقعاً متتالياً`);
+      const lazy=bd.filter(u=>u.total<Math.max(...bd.map(x=>x.total)));
+      if(lazy.length) L.push('متسابقون فوّتوا توقعات: '+lazy.map(u=>`${u.name} (${u.total})`).join('، '));
+    }
+    const ch=roundChamps().find(c=>c.round===prev);
+    if(ch) L.push(`بطل الجولة: ${ch.names.join('، ')} بـ ${ch.pts} من ${ch.of}`);
+    const hard=hardestOf(prev);
+    if(hard) L.push(`أصعب مباراة على المتسابقين: ${tName(hard.f.home)} × ${tName(hard.f.away)} — أصابها ${hard.ok} من ${hard.n}`);
+  }
   return {round:prev, text:L.join('\n')};
 }
 function bulletinKey(){
@@ -2533,7 +2661,7 @@ function paintTicker(txt){
   m.innerHTML=parts.map(p=>`<span>${p}</span>`).join('<span class="sep">◆</span>')
     +'<span class="sep">◆</span>';
   t.classList.add('on');
-  const secs=Math.max(28, Math.min(120, Math.round(txt.length/9)));
+  const secs=Math.max(70, Math.min(260, Math.round(txt.length/3.2)));   // إيقاع هادئ يُقرأ براحة
   m.style.setProperty('--dur', secs+'s');
 }
 async function buildBulletin(force){
@@ -2552,14 +2680,25 @@ async function buildBulletin(force){
     const txt=await aiCall([
       {role:'system',content:AI_PERSONA+`
 
-مهمتك: نشرة إخبارية قصيرة تُقرأ في شريط متحرك.
-اكتب من ست إلى تسع جمل مستقلة، كل جملة في سطر، ويفصل بينها السطر الجديد فقط.
-غطِّ: أبرز نتائج الجولة، هدافيها، أكثر صنّاع اللعب، الموقوفين والمهددين بالإيقاف، الغيابات، صدارة الترتيب، وما ينتظرنا.
-كل جملة قصيرة (من ست إلى اثنتي عشرة كلمة) ومكتفية بنفسها لأنها تمر وحدها أمام العين.
-لهجة سعودية عامة خفيفة وحماسية، وميلك للنصر يظهر بجملة واحدة على الأكثر.
-ممنوع العناوين والترقيم والرموز والنقاط. جمل عربية فقط.`},
+مهمتك: نشرة إخبارية تمرّ في شريط متحرك أمام عين القارئ.
+اكتب من اثنتي عشرة إلى ثماني عشرة جملة مستقلة، كل جملة في سطر منفصل.
+
+غطِّ بهذا الترتيب تقريباً مع حرية في التنويع:
+أبرز نتائج الجولة بأرقامها · هدافو الجولة وصدارة الهدافين · أكثر صنّاع اللعب ·
+الموقوفون ومن بقي له إنذار واحد · الغيابات المؤثرة · صدارة الترتيب وما تغيّر فيها ·
+تحليل أداء المتسابقين في التوقعات: من تصدّر، من الأدق، من الأجرأ، من صاحب أطول سلسلة،
+من فوّت توقعات، والفارق بين الأول والأخير · أصعب مباراة خدعت الجميع · ما ينتظرنا في الجولة القادمة.
+
+الأسلوب:
+كل جملة قائمة بذاتها ومفهومة وحدها (من ثمانٍ إلى ثماني عشرة كلمة).
+اجعل ثلاثاً أو أربعاً منها تحليلية لا خبرية: اربط رقماً برقم، أو قارن متسابقاً بمتسابق، أو استنتج شيئاً لم ينتبه له أحد.
+أدخل جملتين أو ثلاثاً فيها روح مرحة وتعليق خفيف على المتسابقين — تعاير بلطف بلا جرح.
+جملة واحدة على الأكثر تظهر فيها نصراويتك.
+لهجة سعودية عامة بيضاء حيّة.
+ممنوع العناوين والترقيم والرموز. جمل عربية فقط، ولا تكرر بداية جملتين.
+استخدم أسماء اللاعبين العربية كما وردت في البيانات ولا تترجم بنفسك.`},
       {role:'user',content:b.text}
-    ],600,{temp:0.95,pres:0.4,freq:0.35});
+    ],1400,{temp:0.95,pres:0.45,freq:0.4});
     paintTicker(txt);
     localStorage.setItem('splbBulletin',JSON.stringify({key,txt,t:Date.now()}));
   }catch(e){ console.warn('النشرة:',e.message); }
