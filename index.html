@@ -339,11 +339,12 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
 .ticker .tag-live i{width:7px;height:7px;border-radius:50%;background:#fff;
   animation:tkblink 1.2s infinite;display:block}
 @keyframes tkblink{0%,100%{opacity:1}50%{opacity:.25}}
-.ticker .track{flex:1;overflow:hidden;position:relative;height:100%}
-.ticker .move{position:absolute;white-space:nowrap;top:50%;transform:translateY(-50%);
+.ticker .track{flex:1;overflow:hidden;position:relative;height:100%;display:flex;align-items:center}
+.ticker .move{display:flex;align-items:center;white-space:nowrap;
   font-size:.72rem;font-weight:700;color:var(--ink);line-height:1.6;
-  animation:tkrun var(--dur,44s) linear infinite;will-change:transform}
-@keyframes tkrun{from{transform:translate(-100%,-50%)}to{transform:translate(100%,-50%)}}
+  animation:tkrun var(--dur,90s) linear infinite;will-change:transform}
+/* نسختان متتاليتان: حين تنتهي الأولى تكون الثانية في مكانها تماماً فلا تنقطع */
+@keyframes tkrun{from{transform:translateX(0)}to{transform:translateX(50%)}}
 .ticker:hover .move{animation-play-state:paused}
 .ticker .sep{color:var(--brand);opacity:.6;margin:0 14px}
 .ticker .hl{color:var(--brand-2);font-weight:900}
@@ -1660,8 +1661,8 @@ function matchEvents(f){
     const k=id+'|'+el;
     if(!map[k] || v>map[k].v){
       const pl=S.byPlayer[el];
-      const raw=pl?pl.name:('لاعب '+el);
-      map[k]={id,label,v,team,name:playerAr(raw,team)};
+      const nm = pl ? playerAr(pl.name,team) : null;   // بلا اسم = لا نذكر رقماً
+      map[k]={id,label,v,team,name:nm,unknown:!nm};
     }
   };
   // ١) ما ينشره fixtures
@@ -2594,6 +2595,8 @@ const AI_PERSONA = `اسمك «كابتن هبد»، المحلل الرياضي
 ما تخترع رقم ولا اسم لاعب ولا نتيجة ولا حدث. كل كلامك من البيانات اللي بين يديك.
 لو ناقصك رقم قل «ما عندي هالمعلومة» ولا تعبي الفراغ بتخمين.
 لا تصف مجريات ما وصلتك (ما تقول «ضغط في الشوط الثاني» وأنت ما تدري).
+ممنوع منعاً باتاً أن تذكر أرقاماً تعريفية للاعبين (مثل «اللاعب رقم 328»). إن لم يصلك اسم اللاعب فقل
+«ما وصلني اسم اللاعب» ولا تذكر رقماً ولا تخمّن اسماً.
 عندك قوائم لاعبي الأندية الثمانية عشر وانتقالات الموسم — استخدمها بثقة إن سُئلت عنها.
 لكن ما عندك التشكيلة الأساسية لمباراة معيّنة ولا خطة المدرب، فوضّح الفرق إن سُئلت.
 تجاوب على أي سؤال حتى لو خارج الرياضة، وحاول تفيد قدر ما تقدر.
@@ -2653,7 +2656,8 @@ function aiContext(q){
   const done=S.fixtures.filter(f=>outcome(f));
   if(done.length) L.push('\nنتائج المباريات:\n'+done.slice(ALL?0:-12).map(f=>{
     const ev=matchEvents(f);
-    const g=ev.filter(e=>e.id==='goals_scored').map(e=>e.name+(e.v>1?'×'+e.v:'')).join('، ');
+    const g=ev.filter(e=>e.id==='goals_scored'&&e.name)
+      .map(e=>e.name+(e.v>1?'×'+e.v:'')).join('، ');
     return `ج${f.round} ${tName(f.home)} ${hasScore(f)?f.hs+'-'+f.as:''} ${tName(f.away)}${g?' — أهداف: '+g:''}`;
   }).join('\n'));
 
@@ -2730,7 +2734,7 @@ function aiContext(q){
 
 /* ---------------- المحادثة ---------------- */
 function openChat(){
-  if(!AI.key){
+  if(!AI.key && !G.keys.length){
     $('#chatBox').innerHTML='';
     show('#vChat');
     pushMsg('err','المفتاح غير مضبوط. افتح لوحة الإدارة من أسفل الصفحة (الرمز 1406) ← 🤖 كابتن هبد ← الصق مفتاح OpenRouter.');
@@ -2759,12 +2763,19 @@ async function sendChat(){
   inp.value=''; pushMsg('me',q); AI.busy=true;
   const wait=pushMsg('ai',''); wait.innerHTML='<span class="typing"><i></i><i></i><i></i></span>';
   try{
+    if(!S.players.length) await fetchBootstrap();   // بلا أسماء اللاعبين لا معنى للسياق
     const msgs=[{role:'system',content:AI_PERSONA+'\n\n=== بيانات التطبيق الآن ===\n'+aiContext(q)}];
     AI.hist.slice(-10).forEach(m=>msgs.push(m));
     msgs.push({role:'user',content:q});
-    // نُفعّل البحث حين يخرج السؤال عن بيانات التطبيق
-    const webQ=/خبر|أخبار|اخبار|إصاب|اصاب|تصريح|مدرب|عقوب|لجنة|شائع|صفق|انتقال|سعر|جماهير|من هو|متى|أين|وين|كم عمر|جنسي|تاريخ/.test(q);
-    const a=await aiCall(msgs,420,{temp:0.9,pres:0.3,freq:0.25,search:webQ});
+    // مسابقات خارج دوري روشن — بياناتنا لا تغطيها، فالبحث إلزامي
+    const OTHER=/كأس الملك|كاس الملك|السوبر|كأس السوبر|كاس السوبر|خادم الحرمين|كأس ولي العهد|أبطال آسيا|ابطال اسيا|النخبة|الكونفدرالية|كأس العالم للأندية|الدوري الممتاز|دوري يلو|كأس الاتحاد/.test(q);
+    const webQ=OTHER||/خبر|أخبار|اخبار|إصاب|اصاب|تصريح|مدرب|عقوب|لجنة|شائع|صفق|انتقال|سعر|جماهير|من هو|متى|أين|وين|كم عمر|جنسي|تاريخ|بطول|نهائي|قرعة/.test(q);
+    if(OTHER) msgs[0].content += `
+
+تنبيه: السؤال يخص مسابقة خارج دوري روشن (كأس الملك أو السوبر السعودي أو غيرهما).
+بيانات التطبيق تغطي دوري روشن وحده، فاعتمد على نتائج البحث حصراً في هذا الجواب،
+وقل صراحة إن المعلومة من خارج التطبيق. إن لم يصلك شيء موثوق فقل إنك لم تجد.`;
+    const a=await aiCall(msgs,520,{temp:0.9,pres:0.3,freq:0.25,search:webQ});
     wait.textContent=a;
     AI.hist.push({role:'user',content:q},{role:'assistant',content:a});
   }catch(e){ wait.className='msg err'; wait.textContent='ما قدرت أرد: '+e.message; }
@@ -2777,18 +2788,30 @@ async function fetchLeagueNews(force){
   const saved=localStorage.getItem('splbWebNews');
   if(saved && !force){
     try{ const o=JSON.parse(saved);
-      if(Date.now()-o.t < 6*36e5) return o.txt;      // تُجدَّد كل ست ساعات
+      if(Date.now()-o.t < 3*36e5) return o.txt;      // تُجدَّد كل ثلاث ساعات
     }catch(e){}
   }
   try{
     const txt=await aiCall([
-      {role:'system',content:`أنت باحث أخبار رياضية. ابحث في الإنترنت عن آخر أخبار دوري روشن السعودي لموسم 2026/2027.
-أعد من أربعة إلى ستة أخبار حديثة فقط، كل خبر في سطر مستقل، جملة واحدة عربية موجزة لكل خبر.
-ركّز على: نتائج ومستجدات الجولة الأخيرة، الإصابات والإيقافات، قرارات لجنة الانضباط، الصفقات المؤكدة، تصريحات مؤثرة.
-لا تكتب مقدمة ولا خاتمة ولا عناوين ولا روابط ولا ترقيم. أسطر فقط.
-إن لم تجد خبراً موثوقاً فلا تخترع، أعد سطراً واحداً: لا جديد.`},
-      {role:'user',content:'آخر أخبار دوري روشن السعودي 2026 2027 اليوم'}
-    ],700,{temp:0.6,search:true});
+      {role:'system',content:`أنت محرر أخبار رياضية سعودي. ابحث في الإنترنت عن آخر مستجدات الكرة السعودية لموسم 2026/2027.
+
+أعد من اثني عشر إلى عشرين خبراً، كل خبر في سطر مستقل، جملة عربية واحدة موجزة ودقيقة.
+وزّع الأخبار على هذه المحاور قدر ما تجد:
+• دوري روشن: نتائج ومستجدات الجولة الأخيرة والقادمة
+• الإصابات والغيابات وعودة اللاعبين
+• قرارات لجنة الانضباط والإيقافات والاستئنافات
+• الصفقات والانتقالات المؤكدة والمفاوضات الجادة
+• تصريحات المدربين واللاعبين والإدارات
+• كأس الملك والسوبر السعودي وكأس ولي العهد إن كان فيها جديد
+• الأندية السعودية في دوري أبطال آسيا للنخبة
+• المنتخب السعودي إن كان له نشاط
+• أرقام قياسية وإنجازات فردية
+
+لكل خبر اذكر الأسماء والأرقام إن وُجدت. لا مقدمة ولا خاتمة ولا عناوين ولا روابط ولا ترقيم — أسطر فقط.
+لا تكرر خبراً بصيغتين. لا تخترع شيئاً، وما لم تجده اتركه.
+إن لم تجد أي خبر موثوق فأعد سطراً واحداً: لا جديد.`},
+      {role:'user',content:'آخر أخبار الدوري السعودي للمحترفين دوري روشن وكأس الملك والسوبر السعودي 2026 2027'}
+    ],1600,{temp:0.65,search:true});
     if(!txt || /^لا جديد/.test(txt.trim())) return null;
     localStorage.setItem('splbWebNews',JSON.stringify({t:Date.now(),txt}));
     return txt;
@@ -2806,7 +2829,7 @@ function bulletinBrief(){
   if(list.length){
     L.push('نتائج الجولة: '+list.map(f=>`${tName(f.home)} ${f.hs}-${f.as} ${tName(f.away)}`).join(' | '));
     const goals={};
-    list.forEach(f=>matchEvents(f).filter(e=>e.id==='goals_scored')
+    list.forEach(f=>matchEvents(f).filter(e=>e.id==='goals_scored'&&e.name)
       .forEach(e=>goals[e.name]=(goals[e.name]||0)+e.v));
     const top=Object.entries(goals).sort((a,b)=>b[1]-a[1]).slice(0,5);
     if(top.length) L.push('هدافو الجولة: '+top.map(([n,v])=>`${n} ${v}`).join('، '));
@@ -2872,16 +2895,21 @@ function paintTicker(txt){
   const t=$('#ticker'), m=$('#tickerMove');
   if(!t||!m) return;
   if(!txt){ t.classList.remove('on'); return; }
-  const parts=txt.split(/\s*[•|]\s*|\n+/).map(s=>s.trim()).filter(Boolean);
-  m.innerHTML=parts.map(p=>`<span>${p}</span>`).join('<span class="sep">◆</span>')
+  const parts=txt.split(/\s*[•|]\s*|\n+/).map(s=>s.trim())
+    .filter(s=>s && s.length>8 && !/^لا جديد/.test(s));
+  if(!parts.length){ t.classList.remove('on'); return; }
+  // نكرر المحتوى مرتين ليبدو التمرير متصلاً بلا فراغ بين الدورات
+  const one=parts.map(p=>`<span>${p}</span>`).join('<span class="sep">◆</span>')
     +'<span class="sep">◆</span>';
+  m.innerHTML=one+one;
   t.classList.add('on');
-  const secs=Math.max(70, Math.min(260, Math.round(txt.length/3.2)));   // إيقاع هادئ يُقرأ براحة
+  const secs=Math.max(90, Math.min(420, Math.round(txt.length/2.4)));
   m.style.setProperty('--dur', secs+'s');
 }
 async function buildBulletin(force){
   const t=$('#ticker'); if(!t) return;
-  if(!AI.key || !S.ready) return;
+  if(!(AI.key||G.keys.length) || !S.ready) return;
+  if(!S.players.length) await fetchBootstrap();
   const key=bulletinKey();
   const saved=localStorage.getItem('splbBulletin');
   if(saved && !force){
@@ -2897,9 +2925,11 @@ async function buildBulletin(force){
       {role:'system',content:AI_PERSONA+`
 
 مهمتك: نشرة إخبارية تمرّ في شريط متحرك أمام عين القارئ.
-اكتب من اثنتي عشرة إلى ثماني عشرة جملة مستقلة، كل جملة في سطر منفصل.
+اكتب من عشرين إلى ثلاثين جملة مستقلة، كل جملة في سطر منفصل.
+الشريط يمرّ طويلاً أمام القارئ، فكلما زادت الجمل المفيدة كان أفضل — لكن بلا حشو ولا تكرار معنى.
 
-إن وصلتك أخبار حديثة من الإنترنت فاجعل أول ثلاث جمل منها، وميّزها بأنها مستجدات، ثم انتقل لأرقام التطبيق.
+إن وصلتك أخبار حديثة من الإنترنت فاجعلها الثلث الأول من النشرة وميّزها بأنها مستجدات،
+وغطِّ منها ما يخص كأس الملك والسوبر وأبطال آسيا إن وُجد، ثم انتقل لأرقام التطبيق.
 
 غطِّ بهذا الترتيب تقريباً مع حرية في التنويع:
 أبرز نتائج الجولة بأرقامها · هدافو الجولة وصدارة الهدافين · أكثر صنّاع اللعب ·
@@ -2916,7 +2946,7 @@ async function buildBulletin(force){
 ممنوع العناوين والترقيم والرموز. جمل عربية فقط، ولا تكرر بداية جملتين.
 استخدم أسماء اللاعبين العربية كما وردت في البيانات ولا تترجم بنفسك.`},
       {role:'user',content:b.text + (web?`\n\n=== أخبار حديثة من الإنترنت (استخدمها كما هي ولا تزد عليها) ===\n${web}`:'')}
-    ],1400,{temp:0.95,pres:0.45,freq:0.4});
+    ],2200,{temp:0.95,pres:0.45,freq:0.4});
     paintTicker(txt);
     localStorage.setItem('splbBulletin',JSON.stringify({key,txt,t:Date.now()}));
   }catch(e){ console.warn('النشرة:',e.message); }
@@ -2948,9 +2978,9 @@ function roundBrief(r){
   const L=[`جولة رقم ${r} — ${fx.length} مباراة منتهية`];
   fx.forEach(f=>{
     const ev=matchEvents(f);
-    const g=ev.filter(e=>e.id==='goals_scored'||e.id==='own_goals')
+    const g=ev.filter(e=>(e.id==='goals_scored'||e.id==='own_goals')&&e.name)
       .map(e=>`${e.name}${e.v>1?'×'+e.v:''}${e.id==='own_goals'?' (عكسي)':''}`).join('، ');
-    const cd=ev.filter(e=>e.id==='red_cards').map(e=>e.name+' 🟥').join('، ');
+    const cd=ev.filter(e=>e.id==='red_cards'&&e.name).map(e=>e.name+' 🟥').join('، ');
     const all=predsOf(f.id), res=outcome(f);
     const ok=all.filter(p=>sideOf(f,p.prediction)===res).length;
     L.push(`${tName(f.home)} ${f.hs}-${f.as} ${tName(f.away)}`
@@ -2964,9 +2994,10 @@ function roundBrief(r){
   return L.join('\n');
 }
 async function writeArticle(again){
+  if(!S.players.length) await fetchBootstrap();
   const r=+$('#artRound').value, n=$('#artNote'), body=$('#artBody');
   if(!r){ n.className='note err'; n.textContent='اختر جولة'; return; }
-  if(!AI.key){ n.className='note err';
+  if(!AI.key && !G.keys.length){ n.className='note err';
     n.textContent='المفتاح غير مضبوط — أضفه من لوحة الإدارة (الرمز 1406)'; return; }
   if(AI.art['r'+r]&&!again){ showArticle(); return; }
   n.className='note info'; n.textContent='كابتن هبد يكتب…';
@@ -3223,7 +3254,7 @@ function openMatch(fid){
   const evHtml = ev.length
     ? gapNote + ev.map(e=>`<div class="evrow">
         <span class="lbl">${e.label}</span>
-        <span class="who2">${e.name}</span>
+        <span class="who2">${e.name||'لاعب لم يُعرَّف بعد'}</span>
         <span class="tm">${tName(e.team)}</span>
         ${e.v>1?`<span class="tag hid">×${e.v}</span>`:''}</div>`).join('')
     : `<div class="empty" style="padding:26px"><span>📊</span> لم تصل أحداث هذه المباراة
@@ -3621,6 +3652,8 @@ if(S.me)$('#meBtn').querySelector('span').textContent=S.me;
 starsMode('g');
 loadAll();
 setInterval(()=>{if(S.ready){refreshFinished();renderMatches();renderRemind();renderPrev();}},30000);
+/* تُحدَّث النشرة كل ساعتين تلقائياً فلا يبقى الشريط على خبر قديم */
+setInterval(()=>{ if(S.ready && (G.keys.length||AI.key)) buildBulletin(true); }, 2*36e5);
 /* أثناء يوم المباريات نتحقق كل دقيقتين، وفي غيره كل خمس دقائق */
 setInterval(()=>{
   if(!S.ready) return;
