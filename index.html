@@ -2639,7 +2639,11 @@ const AI_PERSONA = `اسمك «كابتن هبد»، المحلل الرياضي
 لا تصف مجريات ما وصلتك (ما تقول «ضغط في الشوط الثاني» وأنت ما تدري).
 ممنوع منعاً باتاً أن تذكر أرقاماً تعريفية للاعبين (مثل «اللاعب رقم 328»). إن لم يصلك اسم اللاعب فقل
 «ما وصلني اسم اللاعب» ولا تذكر رقماً ولا تخمّن اسماً.
-عندك قوائم لاعبي الأندية الثمانية عشر وانتقالات الموسم — استخدمها بثقة إن سُئلت عنها.
+تطّلع على كل أقسام التطبيق: المباريات ومواعيدها ونتائجها وأحداثها، جدول الترتيب، إحصائيات الفرق،
+الهدافين وصنّاع اللعب والحراس، البطاقات والإيقافات، الغيابات والإصابات، قوائم لاعبي الأندية الثمانية عشر،
+انتقالات الموسم، توقعات كل متسابق وتوزيعها على المباريات، لوحة المتصدرين وأبطال الجولات وأصعب المباريات.
+لا تطّلع على لوحة الإدارة ولا مفاتيحها ولا أدواتها، وإن سُئلت عنها قل إنها ليست من شأنك.
+استخدم كل هذا بثقة، وإن لم يصلك قسم في هذا السؤال فقل إنك تحتاج السؤال عنه مباشرة.
 لكن ما عندك التشكيلة الأساسية لمباراة معيّنة ولا خطة المدرب، فوضّح الفرق إن سُئلت.
 تجاوب على أي سؤال حتى لو خارج الرياضة، وحاول تفيد قدر ما تقدر.
 لك أحياناً بحث في الإنترنت: إن وصلتك نتائج بحث فاعتمدها واذكر أنها من خارج التطبيق.
@@ -2675,9 +2679,9 @@ function aiContext(q){
   const clubs=clubsInText(q);
   const askSquad = /تشكيل|قائمة|لاعب|لاعبين|حارس|مدافع|مهاجم|وسط|مركز|من يلعب|منتخب|كشف/.test(q);
   const askTrans = /انتقال|صفق|تعاقد|ضم|انضم|غادر|رحل|جا|جاء|راح|إعارة|اعارة|جديد|بيع|شرا/.test(q);
-  const askPlayers=/هداف|أهداف|اهداف|صناع|صناعة|بطاق|إنذار|انذار|إيقاف|ايقاف|غياب|إصاب|اصاب|حارس|تصدي/.test(q);
-  const askUsers = /متسابق|توقع|ترتيبنا|فينا|بيننا|نقاط|دقة|سلسلة|بطل الجولة|أدائي|ادائي/.test(q);
-  const askTable = /ترتيب|جدول|صدارة|نقاط|هبوط|متصدر|وصيف/.test(q);
+  const askPlayers=/هداف|أهداف|اهداف|صناع|صناعة|بطاق|إنذار|انذار|إيقاف|ايقاف|غياب|إصاب|اصاب|حارس|تصدي|سجل|من سجل|شباك نظيفة|أحداث|احداث|طرد|ركلة/.test(q);
+  const askUsers = /متسابق|توقع|ترتيبنا|فينا|بيننا|نقاط|دقة|سلسلة|بطل الجولة|أدائي|ادائي|مين توقع|من توقع|جريء|أصاب|اصاب|أخطأ|اخطأ|قارن|مقارنة|الأفضل فينا|من فينا/.test(q);
+  const askTable = /ترتيب|جدول|صدارة|نقاط|هبوط|متصدر|وصيف|إحصائ|احصائ|معدل|أفضل هجوم|أفضل دفاع|أقوى|اقوى/.test(q);
   const askNext  = /جاي|قادم|الجولة الجاية|توقعك|بكرة|القادمة/.test(q);
   const L=[];
   L.push(`اليوم: ${new Date().toLocaleString('ar-SA',{timeZone:CFG.TZ,dateStyle:'full',timeStyle:'short'})}`);
@@ -2740,6 +2744,69 @@ function aiContext(q){
   if(S.me){
     const me=b.find(u=>u.name===S.me);
     if(me) L.push(`\nالمستخدم الحالي: ${S.me} — المركز ${me.rank}، ${me.pts} نقطة، دقة ${me.acc}%، سلسلة ${me.streak||0}`);
+  }
+
+  // ===== إحصائيات الفرق (تبويب إحصائيات الفرق) =====
+  if(want(askTable||askPlayers||clubs.length)){
+    const rows=Object.keys(TEAMS).map(Number).map(id=>{
+      const ff=teamForm(id);
+      return {id, ...ff, gpg:ff.p?(ff.gf/ff.p):0, cpg:ff.p?(ff.ga/ff.p):0,
+        cs:S.fixtures.filter(x=>x.finished&&hasScore(x)&&((x.home===id&&x.as===0)||(x.away===id&&x.hs===0))).length};
+    }).filter(r=>r.p);
+    if(rows.length) L.push('\nإحصائيات الفرق (لعب · له · عليه · معدل تسجيل · معدل استقبال · شباك نظيفة):\n'+
+      rows.sort((a,b)=>b.pts-a.pts).map(r=>
+        `${tName(r.id)}: ${r.p} · ${r.gf} · ${r.ga} · ${r.gpg.toFixed(2)} · ${r.cpg.toFixed(2)} · ${r.cs}`).join('\n'));
+  }
+
+  // ===== أحداث المباريات المنتهية بالتفصيل (تبويب المباريات السابقة) =====
+  if(want(askPlayers||clubs.length)){
+    const dd=S.fixtures.filter(f=>outcome(f)).slice(-8);
+    const ev=dd.map(f=>{
+      const e=matchEvents(f).filter(x=>x.name);
+      if(!e.length) return '';
+      return `${tName(f.home)} ${f.hs}-${f.as} ${tName(f.away)} → `+
+        e.map(x=>`${x.label} ${x.name}${x.v>1?'×'+x.v:''}`).join('، ');
+    }).filter(Boolean);
+    if(ev.length) L.push('\nأحداث آخر المباريات:\n'+ev.join('\n'));
+  }
+
+  // ===== توقعات المتسابقين على كل مباراة (تبويب المباريات) =====
+  if(want(askUsers)){
+    const mm=S.fixtures.filter(f=>predsOf(f.id).length).slice(-10);
+    if(mm.length) L.push('\nتوزيع توقعات المتسابقين:\n'+mm.map(f=>{
+      const all=predsOf(f.id), res=outcome(f);
+      const c=s=>all.filter(p=>sideOf(f,p.prediction)===s).length;
+      const line=`${tName(f.home)} × ${tName(f.away)}: مستضيف ${c('HOME')} · تعادل ${c('DRAW')} · ضيف ${c('AWAY')}`;
+      if(!res) return line+' (لم تُلعب)';
+      const ok=all.filter(p=>sideOf(f,p.prediction)===res).length;
+      return line+` — أصابها ${ok} من ${all.length}`;
+    }).join('\n'));
+
+    // توقعات كل متسابق على الجولة الحالية
+    const cur=(S.byRound[S.currentRound]||[]);
+    const byUser={};
+    latest(S.preds).forEach(p=>{
+      const f=fixtureById(fidOf(p.match_id));
+      if(!f||f.round!==S.currentRound) return;
+      (byUser[p.user_name] ||= []).push(`${tName(f.home)}×${tName(f.away)}: ${predShow(f,p.prediction).replace(/[🏆🤝]\s*/g,'')}`);
+    });
+    const uk=Object.keys(byUser);
+    if(uk.length) L.push(`\nتوقعات ${roundName(S.currentRound)} لكل متسابق:\n`+
+      uk.map(u=>`${u}: ${byUser[u].join(' | ')}`).join('\n'));
+    const missing=[...new Set(S.preds.map(p=>p.user_name))]
+      .filter(u=>!byUser[u]);
+    if(missing.length) L.push('لم يتوقعوا في الجولة الحالية: '+missing.join('، '));
+  }
+
+  // ===== الجولات السابقة: أبطالها وأصعب مبارياتها =====
+  if(want(askUsers||askTable)){
+    const ch=roundChamps();
+    if(ch.length) L.push('\nأبطال الجولات: '+ch.map(c=>
+      `${roundName(c.round)} ${c.names.join('،')} (${c.pts} من ${c.of})`).join(' | '));
+    const hs=S.rounds.filter(r=>(S.byRound[r]||[]).some(f=>outcome(f)))
+      .map(r=>hardestOf(r)).filter(Boolean).slice(-4);
+    if(hs.length) L.push('أصعب المباريات: '+hs.map(x=>
+      `${tName(x.f.home)}×${tName(x.f.away)} (${x.ok}/${x.n})`).join(' | '));
   }
 
   // قوائم الأندية — نرسل النادي المذكور فقط، أو الكل إن لم يُذكر نادٍ
@@ -2945,7 +3012,7 @@ function paintTicker(txt){
     +'<span class="sep">◆</span>';
   m.innerHTML=one+one;
   t.classList.add('on');
-  const secs=Math.max(90, Math.min(420, Math.round(txt.length/2.4)));
+  const secs=Math.max(35, Math.min(150, Math.round(txt.length/7)));
   m.style.setProperty('--dur', secs+'s');
 }
 async function buildBulletin(force){
