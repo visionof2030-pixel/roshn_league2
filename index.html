@@ -653,7 +653,7 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
     <div class="grid" id="matches"><div class="empty" id="loadBox">
       <span>⏳</span> جارٍ تحميل المباريات…
       <br><small id="loadHint" style="display:block;margin-top:8px;line-height:1.9">
-      أول فتح يستغرق بضع ثوانٍ لجلب جدول الموسم كاملاً — والمرات القادمة فورية.</small></div></div>
+      نجلب جدول الموسم الآن، وبقية الأقسام تكتمل بعده تلقائياً.</small></div></div>
   </section>
 
   <section class="panel" id="p-me">
@@ -883,9 +883,17 @@ function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');
 const tName=id=>TEAMS[id]?.n||('فريق '+id);
 const tColor=id=>TEAMS[id]?.c||'#3e8fd8';
 const esc=s=>String(s).replace(/'/g,"\\'").replace(/"/g,'&quot;');
+/* الشعار شارة ملوّنة فوراً، ثم تحل الصورة محلها عند جاهزيتها */
+let LOGOS_ON=false;
 function crest(id,cls){
-  if(LOGOS[id]) return `<img class="crest ${cls||''}" src="${LOGOS[id]}" alt="${tName(id)}" loading="lazy">`;
-  return `<span class="crest ${cls||''}" style="background:${tColor(id)}">${(TEAMS[id]?.s||'؟').slice(0,2)}</span>`;
+  if(LOGOS_ON && LOGOS[id])
+    return `<img class="crest ${cls||''}" src="${LOGOS[id]}" alt="${tName(id)}" loading="lazy" decoding="async">`;
+  return `<span class="crest ${cls||''}" data-team="${id}" style="background:${tColor(id)}">${(TEAMS[id]?.s||'؟').slice(0,2)}</span>`;
+}
+function enableLogos(){
+  if(LOGOS_ON) return;
+  LOGOS_ON=true;
+  if(S.ready){ paintCore(); paintRest(); }
 }
 const ksaTime=i=>new Date(i).toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:CFG.TZ});
 const ksaDate=i=>new Date(i).toLocaleDateString('ar-SA',{weekday:'long',day:'numeric',month:'long',timeZone:CFG.TZ});
@@ -1052,9 +1060,11 @@ async function retryBootstrap(){
 }
 /* تُسحب الجولات المنتهية مرة واحدة، والجارية في كل تحديث */
 async function syncLive(){
-  const target=S.rounds.filter(r=>(S.byRound[r]||[]).some(f=>hasEnded(f)));
-  if(!target.length) return;
-  for(const r of target){
+  const all=S.rounds.filter(r=>(S.byRound[r]||[]).some(f=>hasEnded(f)));
+  if(!all.length) return;
+  const target=[...all].reverse().filter(r=>!S.live[r] || r>=S.currentRound-1).slice(0,4)
+    .concat(all.filter(r=>!S.live[r] && !cacheGet('lv'+r,6*36e5)).slice(0,3));
+  for(const r of [...new Set(target)]){
     const done=(S.byRound[r]||[]).every(f=>hasEnded(f));
     await fetchLive(r, !done && !!S.live[r]);   // الجولة الجارية تُحدَّث
   }
@@ -1174,15 +1184,28 @@ function applyManual(){
   });
   S.currentRound=S.rounds.find(r=>S.byRound[r].some(f=>!hasEnded(f)))||S.rounds[S.rounds.length-1];
 }
-function paint(){
+/* المرحلة الأولى: ما يراه المستخدم فوراً */
+function paintCore(){
   refreshFinished();
-  renderRounds();renderMatches();renderRemind();renderMe();renderPrev();
-  renderTable();renderStars();renderNews();renderCards();renderTeams();renderBoard();
-  fillArtRounds(); buildBulletin();
+  renderRounds(); renderMatches(); renderRemind();
   $('#roundBadge').textContent=roundName(S.currentRound);
   const live=S.fixtures.filter(f=>f.started&&!f.finished).length;
   $('#liveStat').textContent=live?`🔴 ${live} مباراة الآن`:`${S.fixtures.filter(f=>f.finished).length} مباراة منتهية`;
 }
+/* المرحلة الثانية: بقية الأقسام على دفعات فلا تتجمد الشاشة */
+function paintRest(){
+  const steps=[renderMe,renderPrev,renderTable,renderBoard,renderStars,renderNews,renderCards,renderTeams];
+  let i=0;
+  const run=()=>{
+    if(i>=steps.length){ __paintTail(); return; }
+    try{ steps[i](); }catch(e){ console.warn('رسم قسم',i,e); }
+    i++;
+    (window.requestIdleCallback||window.requestAnimationFrame)(run);
+  };
+  (window.requestIdleCallback||window.requestAnimationFrame)(run);
+}
+function __paintTail(){ fillArtRounds(); buildBulletin(); }
+function paint(){ paintCore(); paintRest(); }
 /* عرض فوري مما هو محفوظ محلياً (إن وُجد) قبل انتظار الشبكة */
 function paintFromCache(){
   const fx=cacheGet('fx',6*36e5), bs=cacheGet('bs',6*36e5);
@@ -1195,13 +1218,17 @@ function paintFromCache(){
 }
 async function loadAll(manual){
   try{
-    const [fxRes] = await Promise.allSettled([fetchFixtures(), fetchPreds()]);
-    if(fxRes.status==='rejected') throw fxRes.reason;
-    await fetchBootstrap();                  // نحتاج أسماء اللاعبين قبل تفكيك الجولات
-    syncLive();                              // أرقام الموسم والنتائج — في الخلفية
+    // جدول المباريات أولاً — هو كل ما يلزم لعرض الجولة الحالية
+    await fetchFixtures();
     applyManual();
     S.ready=true; if(!manual) S.viewRound=S.currentRound;
-    paint();
+    paintCore();                             // تظهر المباريات هنا، قبل أي شيء آخر
+
+    fetchPreds().then(()=>{ applyManual(); paintCore(); paintRest(); })
+      .catch(e=>console.warn('التوقعات:',e));
+
+    fetchBootstrap().then(()=>syncLive()).catch(e=>console.warn('الخلفية:',e));
+    paintRest();                             // بقية الأقسام على دفعات هادئة
     if(S.admin) refreshAdmin();
     if(manual) toast('تم التحديث');
     if(!S._urlDone){ S._urlDone=true; openFromUrl(); }
@@ -3758,6 +3785,10 @@ $$('.tabs .tab[data-p]').forEach(t=>t.onclick=()=>{
   $$('.panel').forEach(p=>p.classList.remove('on'));
   $('#p-'+t.dataset.p).classList.add('on');
   if(t.dataset.p==='teams')setTimeout(renderTeams,60);});
+
+// نُفعّل الشعارات بعد أن تستقر الواجهة
+if('requestIdleCallback' in window) requestIdleCallback(enableLogos,{timeout:1500});
+else setTimeout(enableLogos,900);
 
 applyTheme(localStorage.getItem('splbTheme')||'dark');
 aiLoad();
