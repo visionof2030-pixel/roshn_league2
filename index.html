@@ -531,20 +531,48 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
     <div class="admin-box" id="ab-arch"><h4>📦 أرشيف المباريات المنتهية <span class="pill" id="archCnt">0</span></h4><div class="plist" id="archList"></div></div>
     <div class="admin-box" id="ab-ai"><h4>🤖 إعداد كابتن هبد <span class="pill" id="aiState">—</span></h4>
       <p style="font-size:.62rem;color:var(--ink-3);margin-bottom:9px;line-height:1.8">
-        نسخة تجريبية عبر OpenRouter. المفتاح يُحفظ في هذا المتصفح فقط.<br>
-        <b style="color:var(--draw)">مهم:</b> النماذج المجانية الصغيرة ضعيفة في العربية وتخلط لغات.
-        اختر نموذجاً كبيراً (‏70B فأكثر أو DeepSeek/Qwen) لتحصل على عربية سليمة.</p>
+        نسخة تجريبية. المفاتيح تُحفظ في هذا المتصفح فقط.
+        <b style="color:var(--brand)">Gemini</b> أسرع ويبحث في جوجل،
+        و<b style="color:var(--brand)">OpenRouter</b> بديل عند تعطّله.</p>
+
       <div class="row">
-        <div class="field"><label>مفتاح OpenRouter</label>
+        <div class="field"><label>المزوّد المفضّل</label>
+          <select id="aiProv" onchange="aiSetProv()">
+            <option value="gemini">Gemini (أسرع · يبحث)</option>
+            <option value="openrouter">OpenRouter</option>
+          </select></div>
+        <div class="field"><label>البحث في الإنترنت</label>
+          <select id="aiSearch" onchange="aiSetSearch()">
+            <option value="1">مفعّل عند الحاجة</option>
+            <option value="0">مغلق</option>
+          </select></div>
+      </div>
+
+      <h4 style="margin-top:12px">🔑 مفاتيح Gemini (حتى 11 مفتاحاً)</h4>
+      <p style="font-size:.6rem;color:var(--ink-3);margin-bottom:7px;line-height:1.8">
+        ضع كل مفتاح في سطر مستقل. يتنقّل بينها تلقائياً عند نفاد حصة أحدها،
+        فلا يتوقف المساعد.</p>
+      <textarea id="aiGKeys" rows="5" placeholder="AIza…&#10;AIza…&#10;AIza…"
+        style="width:100%;padding:11px 14px;border-radius:14px;border:1px solid var(--line);
+        background:var(--surface-2);color:var(--ink);font-size:.72rem;font-family:inherit;
+        outline:none;resize:vertical;direction:ltr;text-align:left"></textarea>
+      <div class="admin-btns" style="margin-top:8px">
+        <button class="btn solid" onclick="aiSaveGemini()">💾 حفظ وفحص المفاتيح</button>
+        <button class="btn" onclick="aiTest()">🧪 اختبار</button>
+      </div>
+      <div class="plist" style="margin-top:9px" id="aiKeysList"></div>
+
+      <h4 style="margin-top:14px">🔑 مفتاح OpenRouter (احتياطي)</h4>
+      <div class="row">
+        <div class="field"><label>المفتاح</label>
           <input type="password" id="aiKey" placeholder="sk-or-v1-…" /></div>
         <div class="field"><label>النموذج</label>
           <select id="aiModel"><option value="">— اضغط «فحص» —</option></select></div>
       </div>
       <div class="admin-btns">
         <button class="btn solid" onclick="aiSaveKey()">💾 حفظ وفحص</button>
-        <button class="btn" onclick="aiTest()">🧪 اختبار</button>
         <button class="btn" onclick="aiBench()">⚡ قياس السرعة</button>
-        <button class="btn danger" onclick="aiClear()">🗑 استعادة الافتراضي</button>
+        <button class="btn danger" onclick="aiClear()">🗑 حذف الكل</button>
       </div>
       <div class="note" id="aiNote"></div></div>
 
@@ -2206,6 +2234,94 @@ function transfersOf(q){
   return TRANSFERS.filter(t=>t.p.includes(s)||t.f===s||t.t===s);
 }
 
+
+/* ============================================================
+   Gemini — عدة مفاتيح مجانية تتناوب تلقائياً + بحث في جوجل
+   ============================================================ */
+const GEM_URL='https://generativelanguage.googleapis.com/v1beta';
+const G={ keys:[], idx:0, model:'', bad:{}, ok:{} };
+
+function gLoad(){
+  try{ G.keys=JSON.parse(localStorage.getItem('splbGKeys')||'[]'); }catch(e){ G.keys=[]; }
+  G.model=localStorage.getItem('splbGModel')||'';
+  G.idx=+(localStorage.getItem('splbGIdx')||0);
+  try{ G.bad=JSON.parse(localStorage.getItem('splbGBad')||'{}'); }catch(e){ G.bad={}; }
+  const t=$('#aiGKeys'); if(t) t.value=G.keys.join('\n');
+}
+function gAlive(i){ const t=G.bad[i]; return !t || Date.now()-t > 6*36e5; }   // يُعاد تجريبه بعد 6 ساعات
+function gNext(){
+  for(let n=0;n<G.keys.length;n++){
+    const i=(G.idx+n)%G.keys.length;
+    if(gAlive(i)) return i;
+  }
+  return G.keys.length?G.idx:-1;
+}
+function gMark(i,ok){
+  if(ok){ delete G.bad[i]; G.ok[i]=(G.ok[i]||0)+1; }
+  else G.bad[i]=Date.now();
+  localStorage.setItem('splbGBad',JSON.stringify(G.bad));
+}
+async function gModels(key){
+  const r=await fetch(`${GEM_URL}/models?key=${encodeURIComponent(key)}`);
+  const d=await r.json();
+  if(!r.ok) throw new Error(d?.error?.message||('HTTP '+r.status));
+  return (d.models||[])
+    .filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent'))
+    .map(m=>m.name.replace(/^models\//,''))
+    .filter(n=>!/embedding|aqa|vision|image|tts|imagen|veo/i.test(n));
+}
+function gPick(list){
+  return list.find(n=>/2\.5-flash(?!.*(lite|thinking))/i.test(n))
+      || list.find(n=>/flash(?!.*lite)/i.test(n))
+      || list.find(n=>/flash/i.test(n))
+      || list.find(n=>/pro/i.test(n))
+      || list[0]||'';
+}
+/* استدعاء واحد بمفتاح واحد */
+async function gRaw(key, model, sys, msgs, maxTok, o, search){
+  const contents=msgs.map(m=>({role:m.role==='assistant'?'model':'user',
+    parts:[{text:m.content}]}));
+  const body={
+    contents,
+    systemInstruction:{parts:[{text:sys}]},
+    generationConfig:{ temperature:o.temp??0.9, topP:o.top??0.9,
+      maxOutputTokens:maxTok||900 }
+  };
+  if(search) body.tools=[{google_search:{}}];
+  const r=await fetch(`${GEM_URL}/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
+    {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d=await r.json();
+  if(!r.ok){
+    const e=new Error(d?.error?.message||('HTTP '+r.status));
+    e.quota = r.status===429 || /quota|exhaust|rate/i.test(e.message);
+    e.status=r.status; throw e;
+  }
+  const parts=d?.candidates?.[0]?.content?.parts||[];
+  return parts.map(p=>p.text||'').join('').trim();
+}
+/* يجرّب المفاتيح بالتناوب حتى ينجح أحدها */
+async function gCall(sys, msgs, maxTok, o, search){
+  if(!G.keys.length) throw new Error('لا توجد مفاتيح Gemini');
+  if(!G.model) G.model=gPick(await gModels(G.keys[gNext()]))||'gemini-2.5-flash';
+  let last=null;
+  for(let n=0;n<G.keys.length;n++){
+    const i=(gNext()+n)%G.keys.length;
+    if(!gAlive(i)) continue;
+    try{
+      const t=await gRaw(G.keys[i], G.model, sys, msgs, maxTok, o||{}, search);
+      G.idx=(i+1)%G.keys.length; localStorage.setItem('splbGIdx',G.idx);
+      gMark(i,true);
+      return t;
+    }catch(e){
+      last=e;
+      if(e.quota){ gMark(i,false); continue; }      // الحصة نفدت: جرّب التالي
+      if(e.status>=500){ continue; }                // عطل مؤقت
+      throw e;                                      // خطأ حقيقي في المفتاح أو الطلب
+    }
+  }
+  throw new Error('نفدت حصص كل المفاتيح — '+(last?last.message:''));
+}
+
 const AI_DEFAULT_KEY='';   // يُدخَل من لوحة الإدارة
 const AI_URL='https://openrouter.ai/api/v1';
 const AI={ key:'', model:'', busy:false, hist:[], art:{} };
@@ -2214,8 +2330,14 @@ function aiLoad(){
   AI.key=localStorage.getItem('splbAiKey')||AI_DEFAULT_KEY;
   AI.model=localStorage.getItem('splbAiModel')||'';
   try{ AI.art=JSON.parse(localStorage.getItem('splbAiArt')||'{}'); }catch(e){ AI.art={}; }
+  gLoad();
+  const pv=$('#aiProv'); if(pv) pv.value=aiProvider();
+  const sw=$('#aiSearch'); if(sw) sw.value=aiSearchOn()?'1':'0';
+  const live=G.keys.filter((_,i)=>gAlive(i)).length;
   const st=$('#aiState');
-  if(st) st.textContent = AI.key ? (AI.model||'يُختار تلقائياً') : 'غير مفعّل';
+  if(st) st.textContent = G.keys.length
+    ? `Gemini · ${live}/${G.keys.length} مفتاح · ${G.model||'—'}`
+    : (AI.key?('OpenRouter · '+(AI.model||'تلقائي')):'غير مفعّل');
   const k=$('#aiKey'); if(k) k.value=AI.key;
 }
 /* OpenRouter يشترط تحديد النموذج في كل طلب، فنجلب واحداً تلقائياً إن لم يُختر */
@@ -2294,7 +2416,37 @@ async function aiRaw(messages,maxTok,o){
   if(!r.ok) throw new Error(d?.error?.message||('HTTP '+r.status));
   return (d.choices?.[0]?.message?.content||'').trim();
 }
+function aiProvider(){ return localStorage.getItem('splbProv')||'gemini'; }
+function aiSearchOn(){ return localStorage.getItem('splbSearch')!=='0'; }
+function aiSetProv(){ localStorage.setItem('splbProv',$('#aiProv').value); aiLoad(); }
+function aiSetSearch(){ localStorage.setItem('splbSearch',$('#aiSearch').value); }
+
+/* يوجّه الطلب إلى Gemini أولاً ثم OpenRouter، أو العكس حسب اختيارك */
 async function aiCall(messages, maxTok, o){
+  o=o||{};
+  const wantSearch = !!(o.search && aiSearchOn());
+  const sys = messages.find(m=>m.role==='system')?.content || '';
+  const rest = messages.filter(m=>m.role!=='system');
+  const order = aiProvider()==='openrouter' ? ['or','gm'] : ['gm','or'];
+  let err=null;
+  for(const p of order){
+    try{
+      if(p==='gm' && G.keys.length){
+        let t=await gCall(sys, rest, maxTok, o, wantSearch);
+        if(JUNK_RE.test(t) || arabicRatio(t)<0.72){
+          const t2=await gCall('اكتب بالعربية فقط. ممنوع أي حرف بلغة أخرى.\n\n'+sys,
+            rest, maxTok, {temp:0.6,top:0.85}, wantSearch);
+          if(!JUNK_RE.test(t2)) t=t2;
+        }
+        return cleanOut(t);
+      }
+      if(p==='or' && AI.key) return await orCall(messages, maxTok, o);
+    }catch(e){ err=e; }
+  }
+  throw err||new Error('لم يُضبط أي مفتاح — افتح لوحة الإدارة');
+}
+
+async function orCall(messages, maxTok, o){
   o=o||{};
   if(!AI.key) throw new Error('المفتاح غير مضبوط — أضفه من لوحة الإدارة');
   await ensureModel();
@@ -2322,6 +2474,36 @@ async function aiCall_unused(messages, maxTok, o){
   if(!r.ok) throw new Error(d?.error?.message||('HTTP '+r.status));
   return (d.choices?.[0]?.message?.content||'').trim();
 }
+async function aiSaveGemini(){
+  const n=$('#aiNote');
+  const keys=($('#aiGKeys').value||'').split(/[\n,;\s]+/).map(s=>s.trim())
+    .filter(Boolean).slice(0,11);
+  if(!keys.length){ n.className='note err'; n.textContent='الصق مفتاحاً واحداً على الأقل'; return; }
+  n.className='note info'; n.textContent=`جارٍ فحص ${keys.length} مفتاحاً…`;
+  const rows=[]; let good=0, models=null;
+  for(let i=0;i<keys.length;i++){
+    try{
+      const list=await gModels(keys[i]);
+      if(!models) models=list;
+      rows.push({i,ok:true,n:list.length}); good++;
+    }catch(e){ rows.push({i,ok:false,m:e.message}); }
+  }
+  G.keys=keys; G.bad={}; G.idx=0;
+  localStorage.setItem('splbGKeys',JSON.stringify(keys));
+  localStorage.setItem('splbGBad','{}'); localStorage.setItem('splbGIdx','0');
+  if(models&&models.length){ G.model=gPick(models); localStorage.setItem('splbGModel',G.model); }
+  $('#aiKeysList').innerHTML=rows.map(r=>`<div class="pitem">
+    <span class="who">مفتاح ${r.i+1}</span>
+    <span style="color:var(--ink-3);font-size:.6rem">${keys[r.i].slice(0,10)}…</span>
+    ${r.ok?`<span class="tag ok">سليم · ${r.n} نموذجاً</span>`
+          :`<span class="tag no">${(r.m||'فشل').slice(0,40)}</span>`}</div>`).join('');
+  aiLoad();
+  n.className = good?'note ok':'note err';
+  n.textContent = good
+    ? `${good} من ${keys.length} مفتاحاً سليم · النموذج: ${G.model}`
+    : 'لم ينجح أي مفتاح';
+}
+
 async function aiSaveKey(){
   const n=$('#aiNote'), key=($('#aiKey').value||'').trim()||AI_DEFAULT_KEY;
   if(!key){ n.className='note err'; n.textContent='الصق مفتاح OpenRouter أولاً'; return; }
@@ -2345,8 +2527,10 @@ async function aiSaveKey(){
   }catch(e){ n.className='note err'; n.textContent='فشل: '+e.message; }
 }
 function aiClear(){
-  ['splbAiKey','splbAiModel','splbAiArt'].forEach(k=>localStorage.removeItem(k));
-  AI.art={}; AI.key=''; AI.model=''; aiLoad();
+  ['splbAiKey','splbAiModel','splbAiArt','splbGKeys','splbGModel','splbGIdx','splbGBad',
+   'splbBulletin','splbNews'].forEach(k=>localStorage.removeItem(k));
+  AI.art={}; AI.key=''; AI.model=''; G.keys=[]; G.model=''; G.bad={};
+  const t=$('#aiGKeys'); if(t) t.value=''; $('#aiKeysList').innerHTML=''; aiLoad();
   $('#aiNote').className='note ok'; $('#aiNote').textContent='حُذف المفتاح والنموذج وكل المقالات';
 }
 /* يقيس زمن الرد الفعلي لأفضل خمسة نماذج ويرشّح الأسرع */
@@ -2381,8 +2565,12 @@ async function aiBench(){
 
 async function aiTest(){
   const n=$('#aiNote'); n.className='note info'; n.textContent='جارٍ الاختبار…';
-  try{ const t=await aiCall([{role:'user',content:'قل جملة قصيرة تعرّف فيها بنفسك.'}],120,{temp:0.9});
-    n.className='note ok'; n.textContent='✅ '+t;
+  const t0=performance.now();
+  try{
+    const t=await aiCall([{role:'system',content:'أجب بالعربية بجملة واحدة.'},
+      {role:'user',content:'قل جملة قصيرة تعرّف فيها بنفسك.'}],120,{temp:0.9});
+    n.className='note ok';
+    n.textContent=`✅ (${Math.round(performance.now()-t0)} مللي ثانية) ${t}`;
   }catch(e){ n.className='note err'; n.textContent='فشل: '+e.message; }
 }
 
@@ -2409,6 +2597,7 @@ const AI_PERSONA = `اسمك «كابتن هبد»، المحلل الرياضي
 عندك قوائم لاعبي الأندية الثمانية عشر وانتقالات الموسم — استخدمها بثقة إن سُئلت عنها.
 لكن ما عندك التشكيلة الأساسية لمباراة معيّنة ولا خطة المدرب، فوضّح الفرق إن سُئلت.
 تجاوب على أي سؤال حتى لو خارج الرياضة، وحاول تفيد قدر ما تقدر.
+لك أحياناً بحث في الإنترنت: إن وصلتك نتائج بحث فاعتمدها واذكر أنها من خارج التطبيق.
 لا تقول إنك نموذج لغوي ولا تشرح طريقة شغلك.
 
 قواعد الكتابة الإلزامية:
@@ -2573,11 +2762,37 @@ async function sendChat(){
     const msgs=[{role:'system',content:AI_PERSONA+'\n\n=== بيانات التطبيق الآن ===\n'+aiContext(q)}];
     AI.hist.slice(-10).forEach(m=>msgs.push(m));
     msgs.push({role:'user',content:q});
-    const a=await aiCall(msgs,420,{temp:0.9,pres:0.3,freq:0.25});
+    // نُفعّل البحث حين يخرج السؤال عن بيانات التطبيق
+    const webQ=/خبر|أخبار|اخبار|إصاب|اصاب|تصريح|مدرب|عقوب|لجنة|شائع|صفق|انتقال|سعر|جماهير|من هو|متى|أين|وين|كم عمر|جنسي|تاريخ/.test(q);
+    const a=await aiCall(msgs,420,{temp:0.9,pres:0.3,freq:0.25,search:webQ});
     wait.textContent=a;
     AI.hist.push({role:'user',content:q},{role:'assistant',content:a});
   }catch(e){ wait.className='msg err'; wait.textContent='ما قدرت أرد: '+e.message; }
   finally{ AI.busy=false; }
+}
+
+/* ---------------- أخبار الدوري من البحث في جوجل ---------------- */
+async function fetchLeagueNews(force){
+  if(!G.keys.length || !aiSearchOn()) return null;
+  const saved=localStorage.getItem('splbWebNews');
+  if(saved && !force){
+    try{ const o=JSON.parse(saved);
+      if(Date.now()-o.t < 6*36e5) return o.txt;      // تُجدَّد كل ست ساعات
+    }catch(e){}
+  }
+  try{
+    const txt=await aiCall([
+      {role:'system',content:`أنت باحث أخبار رياضية. ابحث في الإنترنت عن آخر أخبار دوري روشن السعودي لموسم 2026/2027.
+أعد من أربعة إلى ستة أخبار حديثة فقط، كل خبر في سطر مستقل، جملة واحدة عربية موجزة لكل خبر.
+ركّز على: نتائج ومستجدات الجولة الأخيرة، الإصابات والإيقافات، قرارات لجنة الانضباط، الصفقات المؤكدة، تصريحات مؤثرة.
+لا تكتب مقدمة ولا خاتمة ولا عناوين ولا روابط ولا ترقيم. أسطر فقط.
+إن لم تجد خبراً موثوقاً فلا تخترع، أعد سطراً واحداً: لا جديد.`},
+      {role:'user',content:'آخر أخبار دوري روشن السعودي 2026 2027 اليوم'}
+    ],700,{temp:0.6,search:true});
+    if(!txt || /^لا جديد/.test(txt.trim())) return null;
+    localStorage.setItem('splbWebNews',JSON.stringify({t:Date.now(),txt}));
+    return txt;
+  }catch(e){ console.warn('أخبار الويب:',e.message); return null; }
 }
 
 /* ---------------- النشرة الإخبارية المتحركة ---------------- */
@@ -2676,12 +2891,15 @@ async function buildBulletin(force){
     }catch(e){}
   }
   const b=bulletinBrief();
+  const web=await fetchLeagueNews(force);
   try{
     const txt=await aiCall([
       {role:'system',content:AI_PERSONA+`
 
 مهمتك: نشرة إخبارية تمرّ في شريط متحرك أمام عين القارئ.
 اكتب من اثنتي عشرة إلى ثماني عشرة جملة مستقلة، كل جملة في سطر منفصل.
+
+إن وصلتك أخبار حديثة من الإنترنت فاجعل أول ثلاث جمل منها، وميّزها بأنها مستجدات، ثم انتقل لأرقام التطبيق.
 
 غطِّ بهذا الترتيب تقريباً مع حرية في التنويع:
 أبرز نتائج الجولة بأرقامها · هدافو الجولة وصدارة الهدافين · أكثر صنّاع اللعب ·
@@ -2697,7 +2915,7 @@ async function buildBulletin(force){
 لهجة سعودية عامة بيضاء حيّة.
 ممنوع العناوين والترقيم والرموز. جمل عربية فقط، ولا تكرر بداية جملتين.
 استخدم أسماء اللاعبين العربية كما وردت في البيانات ولا تترجم بنفسك.`},
-      {role:'user',content:b.text}
+      {role:'user',content:b.text + (web?`\n\n=== أخبار حديثة من الإنترنت (استخدمها كما هي ولا تزد عليها) ===\n${web}`:'')}
     ],1400,{temp:0.95,pres:0.45,freq:0.4});
     paintTicker(txt);
     localStorage.setItem('splbBulletin',JSON.stringify({key,txt,t:Date.now()}));
@@ -3419,7 +3637,8 @@ Object.assign(window,{openPick,openMatch,openPlayer,loadAll,hide,starsMode,board
   renderNews,renderSearch,renderCards,openClubCards,openBulk,setBulk,shareLink,syncLive,fetchLive,mpTab,
   checkName,useName,normName,mergeNames,fillMerge,coachNext,coachSkip,coachSkipAll,coachSync,
   aiSaveKey,aiTest,aiClear,openChat,sendChat,askQ,writeArticle,downloadArticle,showArticle,
-  aiModels,ensureModel,aiBench,rankModels,scoreModel,buildBulletin,paintTicker});
+  aiModels,ensureModel,aiBench,rankModels,scoreModel,buildBulletin,paintTicker,
+  aiSaveGemini,aiSetProv,aiSetSearch,gCall,gModels,fetchLeagueNews});
 </script>
 </body>
 </html>
