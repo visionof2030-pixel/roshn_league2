@@ -561,6 +561,7 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
         <button class="btn solid" onclick="aiSaveGemini()">💾 حفظ وفحص المفاتيح</button>
         <button class="btn" onclick="aiTest()">🧪 اختبار</button>
         <button class="btn" onclick="aiTestSearch()">🌐 اختبار البحث</button>
+        <button class="btn solid" onclick="aiDiag()">🩺 تشخيص شامل</button>
       </div>
       <div class="plist" style="margin-top:9px" id="aiKeysList"></div>
 
@@ -2432,45 +2433,69 @@ async function gStream(key, model, sys, msgs, maxTok, o, search, onChunk){
   return out.trim();
 }
 /* يجرّب المفاتيح بالتناوب حتى ينجح أحدها */
+/* قائمة نماذج مرشّحة مرتّبة، تُجلب مرة وتُحفظ */
+async function gCandidates(force){
+  if(G.list && G.list.length && !force) return G.list;
+  try{ G.list=JSON.parse(localStorage.getItem('splbGList')||'[]'); }catch(e){ G.list=[]; }
+  if(!G.list.length || force){
+    for(let i=0;i<G.keys.length;i++){
+      try{
+        const list=await gModels(G.keys[i]);
+        if(list.length){
+          G.list=[...list].sort((a,b)=>gScore(b)-gScore(a));
+          localStorage.setItem('splbGList',JSON.stringify(G.list));
+          break;
+        }
+      }catch(e){}
+    }
+  }
+  return G.list||[];
+}
+function gScore(id){
+  const s=id.toLowerCase(); let n=0;
+  if(/flash/.test(s)) n+=50;               // الأسرع
+  if(/2\.5|3\.0|2\.0/.test(s)) n+=30;     // الأحدث يدعم البحث
+  if(/lite/.test(s)) n+=8;
+  if(/pro/.test(s)) n+=15;
+  if(/exp|preview/.test(s)) n-=12;         // التجريبية أقل استقراراً
+  if(/1\.0|1\.5/.test(s)) n-=10;
+  if(/thinking/.test(s)) n-=25;            // أبطأ بكثير
+  return n;
+}
+
 async function gCall(sys, msgs, maxTok, o, search, onChunk){
   if(!G.keys.length) throw new Error('لا توجد مفاتيح Gemini');
-  if(!G.model){
-    try{ G.model=gPick(await gModels(G.keys[gNext()])); }catch(e){}
-    if(!G.model) G.model='gemini-2.5-flash';
-    localStorage.setItem('splbGModel',G.model);
-  }
+  const cands=await gCandidates();
+  // نبدأ بالنموذج المختار ثم نتدرّج في المرشّحين
+  const models=[...new Set([G.model, ...cands].filter(Boolean))].slice(0,4);
+  if(!models.length) models.push('gemini-2.5-flash');
+
   let last=null;
-  for(let n=0;n<G.keys.length;n++){
-    const i=(gNext()+n)%G.keys.length;
-    if(!gAlive(i)) continue;
-    try{
-      // البحث: نجرّب صيغة الأداة الحديثة ثم القديمة، وإن رُفضتا نجيب بلا بحث
+  for(const model of models){
+    for(let n=0;n<G.keys.length;n++){
+      const i=(gNext()+n)%G.keys.length;
+      if(!gAlive(i)) continue;
       const modes = search ? [1,2,0] : [0];
-      let t='';
       for(const md of modes){
         try{
-          t = onChunk
-            ? await gStream(G.keys[i], G.model, sys, msgs, maxTok, o||{}, md, onChunk)
-            : await gRaw(G.keys[i], G.model, sys, msgs, maxTok, o||{}, md);
-          if(t){ if(md===0&&search) console.info('تعذّر البحث — أُجيب من البيانات'); break; }
-        }catch(e2){
-          if(e2.quota) throw e2;                     // الحصة: ننتقل لمفتاح آخر
-          if(md===modes[modes.length-1]) throw e2;   // آخر محاولة
+          const t = onChunk
+            ? await gStream(G.keys[i], model, sys, msgs, maxTok, o||{}, md, onChunk)
+            : await gRaw(G.keys[i], model, sys, msgs, maxTok, o||{}, md);
+          if(!t) throw new Error('رد فارغ');
+          if(G.model!==model){                       // نموذج جديد نجح: نعتمده
+            G.model=model; localStorage.setItem('splbGModel',model); aiLoad();
+            console.info('اعتُمد النموذج:', model);
+          }
+          if(md===0 && search) console.info('البحث غير مدعوم هنا — أُجيب من البيانات');
+          G.idx=(i+1)%G.keys.length; localStorage.setItem('splbGIdx',G.idx);
+          gMark(i,true);
+          return t;
+        }catch(e){
+          last=e;
+          if(e.quota){ gMark(i,false); break; }      // الحصة: المفتاح التالي
+          // خطأ في الأداة أو النموذج: نكمل الأوضاع ثم النماذج
         }
       }
-      if(!t) throw new Error('رد فارغ');
-      G.idx=(i+1)%G.keys.length; localStorage.setItem('splbGIdx',G.idx);
-      gMark(i,true);
-      return t;
-    }catch(e){
-      last=e;
-      if(e.quota){ gMark(i,false); continue; }      // الحصة نفدت: المفتاح التالي
-      if(e.status>=500 || /fetch|network|Load failed|رد فارغ/i.test(e.message)) continue;
-      if(/model/i.test(e.message)){                 // اسم النموذج غير صالح: نعيد اختياره
-        try{ G.model=gPick(await gModels(G.keys[i]));
-          localStorage.setItem('splbGModel',G.model); n--; continue; }catch(e2){}
-      }
-      continue;                                     // لا نستسلم لمفتاح واحد
     }
   }
   throw new Error('تعذّر الرد من Gemini — '+(last?last.message:'سبب غير معروف'));
@@ -2722,6 +2747,46 @@ async function aiBench(){
 }
 
 /* يتحقق أن أداة البحث تعمل فعلاً مع النموذج المختار */
+/* يجرّب النماذج واحداً واحداً ويعتمد أول ما يرد فعلاً */
+async function aiDiag(){
+  const n=$('#aiNote'), box=$('#aiKeysList');
+  if(!G.keys.length){ n.className='note err'; n.textContent='أضف مفاتيح Gemini أولاً'; return; }
+  n.className='note info'; n.textContent='جارٍ الفحص…';
+  const list=(await gCandidates(true)).slice(0,6);
+  if(!list.length){ n.className='note err'; n.textContent='لم تُرجع الخدمة أي نموذج — تحقق من المفاتيح'; return; }
+  const rows=[]; let chosen=null;
+  for(const m of list){
+    const t0=performance.now();
+    let ok=false, srch=false, msg='';
+    try{
+      const t=await gRaw(G.keys[gNext()], m, 'أجب بالعربية بجملة واحدة.',
+        [{role:'user',content:'قل: جاهز'}], 40, {temp:0.3}, 0);
+      ok=!!t;
+    }catch(e){ msg=e.message.slice(0,50); }
+    if(ok){
+      try{ const s=await gRaw(G.keys[gNext()], m, 'أجب بجملة واحدة.',
+        [{role:'user',content:'ابحث: من بطل دوري روشن الموسم الماضي؟'}], 60, {temp:0.3}, 1);
+        srch=!!s; }catch(e){}
+      if(!chosen) chosen=m;
+    }
+    rows.push({m, ok, srch, ms:Math.round(performance.now()-t0), msg});
+    box.innerHTML=rows.map(r=>`<div class="pitem">
+      <span class="who" style="font-size:.6rem">${r.m}</span>
+      ${r.ok?`<span class="tag ok">يرد · ${r.ms}مث</span>`:`<span class="tag no">${r.msg||'لا يرد'}</span>`}
+      ${r.ok?(r.srch?'<span class="tag hid">🌐 بحث</span>':'<span class="tag wait">بلا بحث</span>'):''}
+    </div>`).join('');
+  }
+  const best=rows.find(r=>r.ok&&r.srch) || rows.find(r=>r.ok);
+  if(best){
+    G.model=best.m; localStorage.setItem('splbGModel',G.model); aiLoad();
+    n.className='note ok';
+    n.textContent=`اعتُمد ${G.model}${best.srch?' · يدعم البحث ✅':' · بلا بحث'}`;
+  }else{
+    n.className='note err';
+    n.textContent='لم يرد أي نموذج — تحقق من صلاحية المفاتيح أو الاتصال';
+  }
+}
+
 async function aiTestSearch(){
   const n=$('#aiNote');
   if(!G.keys.length){ n.className='note err'; n.textContent='أضف مفاتيح Gemini أولاً'; return; }
@@ -3928,11 +3993,14 @@ $$('.tabs .tab[data-p]').forEach(t=>t.onclick=()=>{
 /* تهيئة صامتة للمساعد بعد استقرار الواجهة: اختيار النموذج مسبقاً
    حتى لا يضيع وقت أول سؤال في جلب قائمة النماذج */
 function aiWarmup(){
-  if(!G.keys.length || G.model) return;
-  const i=gNext(); if(i<0) return;
-  gModels(G.keys[i]).then(list=>{
-    G.model=gPick(list); localStorage.setItem('splbGModel',G.model); aiLoad();
-    console.log('%c🤖 كابتن هبد جاهز · '+G.model,'color:#00b492');
+  if(!G.keys.length) return;
+  gCandidates(true).then(list=>{
+    if(!list.length) return;
+    if(!G.model || !list.includes(G.model)){
+      G.model=list[0]; localStorage.setItem('splbGModel',G.model);
+    }
+    aiLoad();
+    console.log('%c🤖 كابتن هبد جاهز · '+G.model+' · '+list.length+' نموذجاً متاحاً','color:#00b492');
   }).catch(()=>{});
 }
 setTimeout(aiWarmup, 2500);
@@ -3994,7 +4062,8 @@ Object.assign(window,{openPick,openMatch,openPlayer,loadAll,retryBootstrap,hide,
   checkName,useName,normName,mergeNames,fillMerge,coachNext,coachSkip,coachSkipAll,coachSync,
   aiSaveKey,aiTest,aiClear,openChat,sendChat,askQ,writeArticle,downloadArticle,showArticle,
   aiModels,ensureModel,aiBench,rankModels,scoreModel,buildBulletin,paintTicker,
-  aiSaveGemini,aiSetProv,aiSetSearch,gCall,gModels,fetchLeagueNews,newChat,aiWarmup,aiTestSearch});
+  aiSaveGemini,aiSetProv,aiSetSearch,gCall,gModels,fetchLeagueNews,newChat,aiWarmup,aiTestSearch,
+  aiDiag,gCandidates});
 </script>
 </body>
 </html>
