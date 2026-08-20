@@ -560,6 +560,7 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
       <div class="admin-btns" style="margin-top:8px">
         <button class="btn solid" onclick="aiSaveGemini()">💾 حفظ وفحص المفاتيح</button>
         <button class="btn" onclick="aiTest()">🧪 اختبار</button>
+        <button class="btn" onclick="aiTestSearch()">🌐 اختبار البحث</button>
       </div>
       <div class="plist" style="margin-top:9px" id="aiKeysList"></div>
 
@@ -2376,7 +2377,8 @@ async function gRaw(key, model, sys, msgs, maxTok, o, search){
     generationConfig:{ temperature:o.temp??0.9, topP:o.top??0.9,
       maxOutputTokens:maxTok||900 }
   };
-  if(search) body.tools=[{google_search:{}}];
+  if(search===1) body.tools=[{google_search:{}}];
+  else if(search===2) body.tools=[{google_search_retrieval:{}}];
   const r=await fetch(`${GEM_URL}/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
     {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const d=await r.json();
@@ -2393,7 +2395,8 @@ async function gStream(key, model, sys, msgs, maxTok, o, search, onChunk){
   const contents=msgs.map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:m.content}]}));
   const body={contents, systemInstruction:{parts:[{text:sys}]},
     generationConfig:{temperature:o.temp??0.9, topP:o.top??0.9, maxOutputTokens:maxTok||900}};
-  if(search) body.tools=[{google_search:{}}];
+  if(search===1) body.tools=[{google_search:{}}];
+  else if(search===2) body.tools=[{google_search_retrieval:{}}];
   const r=await fetch(`${GEM_URL}/models/${model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(key)}`,
     {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   if(!r.ok){
@@ -2406,6 +2409,8 @@ async function gStream(key, model, sys, msgs, maxTok, o, search, onChunk){
   if(!r.body) throw new Error('البث غير مدعوم');
   const rd=r.body.getReader(), dec=new TextDecoder();
   let buf='', out='';
+  // مع البحث قد يصمت الخادم طويلاً قبل أول جزء
+  const guard=setTimeout(()=>{ try{ rd.cancel(); }catch(e){} }, search?45000:30000);
   while(true){
     const {done,value}=await rd.read();
     if(done) break;
@@ -2423,6 +2428,7 @@ async function gStream(key, model, sys, msgs, maxTok, o, search, onChunk){
       }catch(e){}
     }
   }
+  clearTimeout(guard);
   return out.trim();
 }
 /* يجرّب المفاتيح بالتناوب حتى ينجح أحدها */
@@ -2438,9 +2444,20 @@ async function gCall(sys, msgs, maxTok, o, search, onChunk){
     const i=(gNext()+n)%G.keys.length;
     if(!gAlive(i)) continue;
     try{
-      const t = onChunk
-        ? await gStream(G.keys[i], G.model, sys, msgs, maxTok, o||{}, search, onChunk)
-        : await gRaw(G.keys[i], G.model, sys, msgs, maxTok, o||{}, search);
+      // البحث: نجرّب صيغة الأداة الحديثة ثم القديمة، وإن رُفضتا نجيب بلا بحث
+      const modes = search ? [1,2,0] : [0];
+      let t='';
+      for(const md of modes){
+        try{
+          t = onChunk
+            ? await gStream(G.keys[i], G.model, sys, msgs, maxTok, o||{}, md, onChunk)
+            : await gRaw(G.keys[i], G.model, sys, msgs, maxTok, o||{}, md);
+          if(t){ if(md===0&&search) console.info('تعذّر البحث — أُجيب من البيانات'); break; }
+        }catch(e2){
+          if(e2.quota) throw e2;                     // الحصة: ننتقل لمفتاح آخر
+          if(md===modes[modes.length-1]) throw e2;   // آخر محاولة
+        }
+      }
       if(!t) throw new Error('رد فارغ');
       G.idx=(i+1)%G.keys.length; localStorage.setItem('splbGIdx',G.idx);
       gMark(i,true);
@@ -2702,6 +2719,26 @@ async function aiBench(){
     ? `اعتُمد الأسرع: <b>${AI.model}</b><br>`+
       out.map(x=>`${x.ok&&x.ms?'✅':'❌'} ${x.m} — ${x.ms?x.ms+' مللي ثانية':'فشل'}`).join('<br>')
     : 'لم ينجح أي نموذج — جرّب مفتاحاً آخر';
+}
+
+/* يتحقق أن أداة البحث تعمل فعلاً مع النموذج المختار */
+async function aiTestSearch(){
+  const n=$('#aiNote');
+  if(!G.keys.length){ n.className='note err'; n.textContent='أضف مفاتيح Gemini أولاً'; return; }
+  n.className='note info'; n.textContent='جارٍ اختبار البحث…';
+  const t0=performance.now();
+  for(const md of [1,2]){
+    try{
+      const t=await gRaw(G.keys[gNext()], G.model, 'أجب بالعربية بجملة واحدة قصيرة.',
+        [{role:'user',content:'ابحث: من بطل دوري روشن السعودي الموسم الماضي؟'}], 150, {temp:0.4}, md);
+      if(t){ n.className='note ok';
+        n.textContent=`✅ البحث يعمل (صيغة ${md===1?'google_search':'google_search_retrieval'}) · `+
+          `${Math.round(performance.now()-t0)} مللي ثانية · ${t.slice(0,90)}`;
+        return; }
+    }catch(e){ n.textContent='الصيغة '+md+' فشلت… '+e.message.slice(0,60); }
+  }
+  n.className='note err';
+  n.textContent='النموذج الحالي لا يدعم البحث — بدّله من القائمة (يفضَّل نموذج Flash حديث)';
 }
 
 async function aiTest(){
@@ -3014,6 +3051,8 @@ async function sendChat(){
     if(QCACHE[ck]){ wait.textContent=QCACHE[ck];
       AI.hist.push({role:'user',content:q},{role:'assistant',content:QCACHE[ck]});
       AI.busy=false; return; }
+    if(webQ) wait.innerHTML='<span class="typing"><i></i><i></i><i></i></span>'+
+      '<span style="font-size:.6rem;color:var(--ink-3);margin-right:8px">يبحث في الإنترنت…</span>';
     let first=true;
     const a=await aiCall(msgs,520,{temp:0.9,pres:0.3,freq:0.25,search:webQ,
       onChunk:t=>{ if(first){ wait.innerHTML=''; first=false; }
@@ -3064,6 +3103,7 @@ async function fetchLeagueNews(force){
       {role:'user',content:'آخر أخبار الدوري السعودي للمحترفين دوري روشن وكأس الملك والسوبر السعودي 2026 2027'}
     ],1600,{temp:0.65,search:true});
     if(!txt || /^لا جديد/.test(txt.trim())) return null;
+    console.info('وصلت أخبار الويب:', txt.split('\n').filter(Boolean).length, 'خبراً');
     localStorage.setItem('splbWebNews',JSON.stringify({t:Date.now(),txt}));
     return txt;
   }catch(e){ console.warn('أخبار الويب:',e.message); return null; }
@@ -3954,7 +3994,7 @@ Object.assign(window,{openPick,openMatch,openPlayer,loadAll,retryBootstrap,hide,
   checkName,useName,normName,mergeNames,fillMerge,coachNext,coachSkip,coachSkipAll,coachSync,
   aiSaveKey,aiTest,aiClear,openChat,sendChat,askQ,writeArticle,downloadArticle,showArticle,
   aiModels,ensureModel,aiBench,rankModels,scoreModel,buildBulletin,paintTicker,
-  aiSaveGemini,aiSetProv,aiSetSearch,gCall,gModels,fetchLeagueNews,newChat,aiWarmup});
+  aiSaveGemini,aiSetProv,aiSetSearch,gCall,gModels,fetchLeagueNews,newChat,aiWarmup,aiTestSearch});
 </script>
 </body>
 </html>
