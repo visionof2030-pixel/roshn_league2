@@ -803,7 +803,8 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
   <div class="qsug" id="chatSug"></div>
   <div class="chatbar">
     <input type="text" id="chatIn" placeholder="اكتب سؤالك…" onkeydown="if(event.key==='Enter')sendChat()" />
-    <button class="btn solid" onclick="sendChat()">إرسال</button>
+    <button class="btn solid" id="chatSend" onclick="sendChat()">إرسال</button>
+    <button class="btn" id="chatNew" onclick="newChat()" title="محادثة جديدة">🗑</button>
   </div>
   <div class="note" id="chatNote"></div>
 </div></div>
@@ -2387,27 +2388,75 @@ async function gRaw(key, model, sys, msgs, maxTok, o, search){
   const parts=d?.candidates?.[0]?.content?.parts||[];
   return parts.map(p=>p.text||'').join('').trim();
 }
+/* بث تدريجي: تظهر الكلمات أثناء كتابتها بدل انتظار الرد كاملاً */
+async function gStream(key, model, sys, msgs, maxTok, o, search, onChunk){
+  const contents=msgs.map(m=>({role:m.role==='assistant'?'model':'user',parts:[{text:m.content}]}));
+  const body={contents, systemInstruction:{parts:[{text:sys}]},
+    generationConfig:{temperature:o.temp??0.9, topP:o.top??0.9, maxOutputTokens:maxTok||900}};
+  if(search) body.tools=[{google_search:{}}];
+  const r=await fetch(`${GEM_URL}/models/${model}:streamGenerateContent?alt=sse&key=${encodeURIComponent(key)}`,
+    {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  if(!r.ok){
+    let msg='HTTP '+r.status;
+    try{ const d=await r.json(); msg=d?.error?.message||msg; }catch(e){}
+    const err=new Error(msg);
+    err.quota = r.status===429 || /quota|exhaust|rate/i.test(msg);
+    err.status=r.status; throw err;
+  }
+  if(!r.body) throw new Error('البث غير مدعوم');
+  const rd=r.body.getReader(), dec=new TextDecoder();
+  let buf='', out='';
+  while(true){
+    const {done,value}=await rd.read();
+    if(done) break;
+    buf+=dec.decode(value,{stream:true});
+    const lines=buf.split('\n'); buf=lines.pop()||'';
+    for(const ln of lines){
+      const s=ln.trim();
+      if(!s.startsWith('data:')) continue;
+      const js=s.slice(5).trim();
+      if(!js||js==='[DONE]') continue;
+      try{
+        const d=JSON.parse(js);
+        const t=(d?.candidates?.[0]?.content?.parts||[]).map(x=>x.text||'').join('');
+        if(t){ out+=t; onChunk&&onChunk(out); }
+      }catch(e){}
+    }
+  }
+  return out.trim();
+}
 /* يجرّب المفاتيح بالتناوب حتى ينجح أحدها */
-async function gCall(sys, msgs, maxTok, o, search){
+async function gCall(sys, msgs, maxTok, o, search, onChunk){
   if(!G.keys.length) throw new Error('لا توجد مفاتيح Gemini');
-  if(!G.model) G.model=gPick(await gModels(G.keys[gNext()]))||'gemini-2.5-flash';
+  if(!G.model){
+    try{ G.model=gPick(await gModels(G.keys[gNext()])); }catch(e){}
+    if(!G.model) G.model='gemini-2.5-flash';
+    localStorage.setItem('splbGModel',G.model);
+  }
   let last=null;
   for(let n=0;n<G.keys.length;n++){
     const i=(gNext()+n)%G.keys.length;
     if(!gAlive(i)) continue;
     try{
-      const t=await gRaw(G.keys[i], G.model, sys, msgs, maxTok, o||{}, search);
+      const t = onChunk
+        ? await gStream(G.keys[i], G.model, sys, msgs, maxTok, o||{}, search, onChunk)
+        : await gRaw(G.keys[i], G.model, sys, msgs, maxTok, o||{}, search);
+      if(!t) throw new Error('رد فارغ');
       G.idx=(i+1)%G.keys.length; localStorage.setItem('splbGIdx',G.idx);
       gMark(i,true);
       return t;
     }catch(e){
       last=e;
-      if(e.quota){ gMark(i,false); continue; }      // الحصة نفدت: جرّب التالي
-      if(e.status>=500){ continue; }                // عطل مؤقت
-      throw e;                                      // خطأ حقيقي في المفتاح أو الطلب
+      if(e.quota){ gMark(i,false); continue; }      // الحصة نفدت: المفتاح التالي
+      if(e.status>=500 || /fetch|network|Load failed|رد فارغ/i.test(e.message)) continue;
+      if(/model/i.test(e.message)){                 // اسم النموذج غير صالح: نعيد اختياره
+        try{ G.model=gPick(await gModels(G.keys[i]));
+          localStorage.setItem('splbGModel',G.model); n--; continue; }catch(e2){}
+      }
+      continue;                                     // لا نستسلم لمفتاح واحد
     }
   }
-  throw new Error('نفدت حصص كل المفاتيح — '+(last?last.message:''));
+  throw new Error('تعذّر الرد من Gemini — '+(last?last.message:'سبب غير معروف'));
 }
 
 const AI_DEFAULT_KEY='';   // يُدخَل من لوحة الإدارة
@@ -2516,22 +2565,26 @@ async function aiCall(messages, maxTok, o){
   const sys = messages.find(m=>m.role==='system')?.content || '';
   const rest = messages.filter(m=>m.role!=='system');
   const order = aiProvider()==='openrouter' ? ['or','gm'] : ['gm','or'];
-  let err=null;
+  const errs=[];
   for(const p of order){
     try{
       if(p==='gm' && G.keys.length){
-        let t=await gCall(sys, rest, maxTok, o, wantSearch);
-        if(JUNK_RE.test(t) || arabicRatio(t)<0.72){
-          const t2=await gCall('اكتب بالعربية فقط. ممنوع أي حرف بلغة أخرى.\n\n'+sys,
-            rest, maxTok, {temp:0.6,top:0.85}, wantSearch);
-          if(!JUNK_RE.test(t2)) t=t2;
+        const t=await gCall(sys, rest, maxTok, o, wantSearch, o.onChunk);
+        // إعادة التوليد فقط عند تشويش صريح، لا لمجرد كلمة أجنبية
+        if(JUNK_RE.test(t)){
+          try{
+            const t2=await gCall('اكتب بالعربية فقط. ممنوع أي حرف بلغة أخرى.\n\n'+sys,
+              rest, maxTok, {temp:0.6,top:0.85}, wantSearch);
+            if(t2 && !JUNK_RE.test(t2)) return cleanOut(t2);
+          }catch(e){}
         }
         return cleanOut(t);
       }
       if(p==='or' && AI.key) return await orCall(messages, maxTok, o);
-    }catch(e){ err=e; }
+    }catch(e){ errs.push((p==='gm'?'Gemini: ':'OpenRouter: ')+e.message); }
   }
-  throw err||new Error('لم يُضبط أي مفتاح — افتح لوحة الإدارة');
+  if(!G.keys.length && !AI.key) throw new Error('لم يُضبط أي مفتاح — افتح لوحة الإدارة');
+  throw new Error(errs.join(' · ') || 'تعذّر الرد');
 }
 
 async function orCall(messages, maxTok, o){
@@ -2678,6 +2731,14 @@ const AI_PERSONA = `اسمك «كابتن هبد»، المحلل الرياضي
 تنوّع دايم: لا تبدأ ردين ورا بعض بنفس البداية، ولا تعيد نفس التراكيب، ولا تختم بعبارة محفوظة.
 في التحليل كن بحراً: لاحظ اللي ما لاحظه أحد، اربط الأرقام ببعضها، اطلع بزاوية جديدة كل مرة.
 
+كيف تفكّر قبل ما ترد:
+اقرأ الأرقام كلها، وقارن بين أكثر من مصدر فيها قبل ما تحكم — مثلاً لا تحكم على مهاجم بأهدافه فقط
+بل بدقائقه ومعدله وقوة خصومه. ولا تحكم على متسابق بنقاطه فقط بل بدقته وعدد توقعاته.
+ابحث عن المفارقة: فريق يسجل كثير ويخسر، متسابق دقيق لكنه متأخر، لاعب يلعب قليل وينتج كثير.
+لو السؤال يحتمل جوابين، اذكر الأرجح وليش، وما تسرد الاحتمالات كلها.
+لو الرقم قليل جداً (جولة أو جولتين) قل إن العينة صغيرة ولا تبني عليها حكماً قاطعاً.
+جاوب على المقصود لا على الحرفي: لو سأل «مين الأفضل؟» افهم في أي شي، ولو ما اتضح اسأله سؤال توضيح واحد.
+
 حدودك:
 ما تخترع رقم ولا اسم لاعب ولا نتيجة ولا حدث. كل كلامك من البيانات اللي بين يديك.
 لو ناقصك رقم قل «ما عندي هالمعلومة» ولا تعبي الفراغ بتخمين.
@@ -2745,7 +2806,7 @@ function aiContext(q){
   void askTable;
 
   const done=S.fixtures.filter(f=>outcome(f));
-  if(done.length) L.push('\nنتائج المباريات:\n'+done.slice(ALL?0:-12).map(f=>{
+  if(done.length) L.push('\nنتائج المباريات:\n'+done.slice(ALL?0:-9).map(f=>{
     const ev=matchEvents(f);
     const g=ev.filter(e=>e.id==='goals_scored'&&e.name)
       .map(e=>e.name+(e.v>1?'×'+e.v:'')).join('، ');
@@ -2760,7 +2821,7 @@ function aiContext(q){
 
   const nm=p=>playerAr(p.name,p.team);
   if(want(askPlayers||askTable||askNext)){
-  const sc=S.players.filter(p=>p.goals>0).sort((a,b)=>b.goals-a.goals).slice(0,12);
+  const sc=S.players.filter(p=>p.goals>0).sort((a,b)=>b.goals-a.goals).slice(0,ALL?12:8);
   if(sc.length) L.push('\nالهدافين: '+sc.map(p=>`${nm(p)} (${tName(p.team)}) ${p.goals}`).join('، '));
   const as=S.players.filter(p=>p.assists>0).sort((a,b)=>b.assists-a.assists).slice(0,10);
   if(as.length) L.push('صنّاع اللعب: '+as.map(p=>`${nm(p)} ${p.assists}`).join('، '));
@@ -2805,7 +2866,7 @@ function aiContext(q){
 
   // ===== أحداث المباريات المنتهية بالتفصيل (تبويب المباريات السابقة) =====
   if(want(askPlayers||clubs.length)){
-    const dd=S.fixtures.filter(f=>outcome(f)).slice(-8);
+    const dd=S.fixtures.filter(f=>outcome(f)).slice(ALL?-8:-5);
     const ev=dd.map(f=>{
       const e=matchEvents(f).filter(x=>x.name);
       if(!e.length) return '';
@@ -2899,22 +2960,41 @@ function openChat(){
     $('#chatBox').innerHTML='';
     pushMsg('ai','هلا والله 👋 أنا كابتن هبد، محلل التطبيق. اسألني عن أي شي — دوري، أرقام، توقعاتكم، أو أي موضوع ثاني. والنصر بطل بإذن الله 💛');
   }
-  $('#chatSug').innerHTML=[
-    'وش رايك في ترتيب الدوري؟','عطني قائمة لاعبي النصر','مين جا ومين راح في الهلال؟',
-    'من أفضل متسابق فينا؟','مين مهدد بالإيقاف؟','وش توقعك للجولة الجاية؟'
-  ].map(q=>`<button onclick="askQ('${esc(q)}')">${q}</button>`).join('');
+  const played=S.fixtures.filter(f=>outcome(f)).length;
+  const users=scoreboard().length;
+  const sug=[];
+  if(played) sug.push('وش رايك في ترتيب الدوري؟','مين أخطر هداف وليش؟');
+  else sug.push('مين المرشح للبطولة هالموسم؟');
+  if(users>1) sug.push('قارن بين المتسابقين وحلّل أداءهم','مين أدق واحد فينا وليش؟');
+  sug.push('عطني قائمة لاعبي النصر','مين جا ومين راح في الهلال؟');
+  if(S.players.some(p=>cardStatus(p).risk)) sug.push('مين مهدد بالإيقاف؟');
+  sug.push('وش أخبار كأس الملك؟','وش توقعك للجولة الجاية؟');
+  $('#chatSug').innerHTML=sug.slice(0,6)
+    .map(q=>`<button onclick="askQ('${esc(q)}')">${q}</button>`).join('');
   show('#vChat'); setTimeout(()=>$('#chatIn').focus(),300);
 }
 function pushMsg(who,txt){
   const d=document.createElement('div'); d.className='msg '+who; d.textContent=txt;
   $('#chatBox').appendChild(d); $('#chatBox').scrollTop=1e6; return d;
 }
+function newChat(){
+  AI.hist=[]; $('#chatBox').innerHTML='';
+  pushMsg('ai','هلا والله 👋 أنا كابتن هبد. اسألني عن أي شي — دوري، أرقام، توقعاتكم، أو أي موضوع ثاني. والنصر بطل بإذن الله 💛');
+}
 function askQ(q){ if(!$('#vChat').classList.contains('on')) openChat();
   $('#chatIn').value=q; setTimeout(sendChat,120); }
+/* ذاكرة إجابات: نفس السؤال على نفس البيانات لا يستحق طلباً جديداً */
+const QCACHE={};
+function qKey(q){
+  const sig = S.fixtures.filter(f=>outcome(f)).length+'|'+S.preds.length+'|'+S.currentRound;
+  return normName(q)+'#'+sig;
+}
+
 async function sendChat(){
   const inp=$('#chatIn'), q=inp.value.trim();
   if(!q||AI.busy) return;
   inp.value=''; pushMsg('me',q); AI.busy=true;
+  const sendBtn=$('#chatSend'); if(sendBtn){ sendBtn.disabled=true; sendBtn.textContent='…'; }
   const wait=pushMsg('ai',''); wait.innerHTML='<span class="typing"><i></i><i></i><i></i></span>';
   try{
     if(!S.players.length) await fetchBootstrap();   // بلا أسماء اللاعبين لا معنى للسياق
@@ -2929,11 +3009,28 @@ async function sendChat(){
 تنبيه: السؤال يخص مسابقة خارج دوري روشن (كأس الملك أو السوبر السعودي أو غيرهما).
 بيانات التطبيق تغطي دوري روشن وحده، فاعتمد على نتائج البحث حصراً في هذا الجواب،
 وقل صراحة إن المعلومة من خارج التطبيق. إن لم يصلك شيء موثوق فقل إنك لم تجد.`;
-    const a=await aiCall(msgs,520,{temp:0.9,pres:0.3,freq:0.25,search:webQ});
-    wait.textContent=a;
+    // البصمة تتغيّر مع أي نتيجة أو توقع جديد فتبطل الإجابات القديمة تلقائياً
+  const ck=qKey(q);
+    if(QCACHE[ck]){ wait.textContent=QCACHE[ck];
+      AI.hist.push({role:'user',content:q},{role:'assistant',content:QCACHE[ck]});
+      AI.busy=false; return; }
+    let first=true;
+    const a=await aiCall(msgs,520,{temp:0.9,pres:0.3,freq:0.25,search:webQ,
+      onChunk:t=>{ if(first){ wait.innerHTML=''; first=false; }
+        wait.textContent=t; $('#chatBox').scrollTop=1e6; }});
+    wait.textContent=cleanOut(a);
+    QCACHE[ck]=cleanOut(a);
     AI.hist.push({role:'user',content:q},{role:'assistant',content:a});
-  }catch(e){ wait.className='msg err'; wait.textContent='ما قدرت أرد: '+e.message; }
-  finally{ AI.busy=false; }
+  }catch(e){
+    wait.className='msg err';
+    const m=String(e.message||'');
+    wait.textContent = /نفدت|quota|429/i.test(m)
+      ? 'نفدت حصص المفاتيح مؤقتاً — جرّب بعد قليل أو أضف مفتاحاً في لوحة الإدارة.'
+      : (/مفتاح/.test(m) ? m : 'تعذّر الرد الآن: '+m+'  ·  جرّب مرة ثانية.');
+  }
+  finally{ AI.busy=false;
+    const b=$('#chatSend'); if(b){ b.disabled=false; b.textContent='إرسال'; }
+    $('#chatBox').scrollTop=1e6; }
 }
 
 /* ---------------- أخبار الدوري من البحث في جوجل ---------------- */
@@ -3166,6 +3263,8 @@ async function writeArticle(again){
 ثم خاتمة فيها رأيك وتوقعك. غطِّ أبرز المباريات والأهداف والبطاقات وأداء المتسابقين في التوقعات.
 لك مطلق الحرية في الترتيب والزوايا والطول — لا تلتزم قالباً ولا تكرر بنية واحدة.
 ابدأ من الزاوية الأطرف في الأرقام، لا من أول مباراة زمنياً.
+قبل الكتابة: افحص الأرقام وابحث عن أغرب رقم أو أكبر مفارقة في الجولة، واجعلها محور المقال.
+اربط بين مباراتين أو أكثر إن كان بينهما خيط مشترك.
 لا تخترع شيئاً خارج الأرقام المعطاة.${prev.length?`\n\nمقالاتك السابقة كانت:\n«${prev.join('»\n\n«')}»\nغيّر أسلوبك ومداخلك وعناوينك تماماً عنها.`:''}`},
       {role:'user',content:roundBrief(r)}
     ],2000,{temp:0.9,pres:0.35,freq:0.3});
@@ -3786,6 +3885,18 @@ $$('.tabs .tab[data-p]').forEach(t=>t.onclick=()=>{
   $('#p-'+t.dataset.p).classList.add('on');
   if(t.dataset.p==='teams')setTimeout(renderTeams,60);});
 
+/* تهيئة صامتة للمساعد بعد استقرار الواجهة: اختيار النموذج مسبقاً
+   حتى لا يضيع وقت أول سؤال في جلب قائمة النماذج */
+function aiWarmup(){
+  if(!G.keys.length || G.model) return;
+  const i=gNext(); if(i<0) return;
+  gModels(G.keys[i]).then(list=>{
+    G.model=gPick(list); localStorage.setItem('splbGModel',G.model); aiLoad();
+    console.log('%c🤖 كابتن هبد جاهز · '+G.model,'color:#00b492');
+  }).catch(()=>{});
+}
+setTimeout(aiWarmup, 2500);
+
 // نُفعّل الشعارات بعد أن تستقر الواجهة
 if('requestIdleCallback' in window) requestIdleCallback(enableLogos,{timeout:1500});
 else setTimeout(enableLogos,900);
@@ -3843,7 +3954,7 @@ Object.assign(window,{openPick,openMatch,openPlayer,loadAll,retryBootstrap,hide,
   checkName,useName,normName,mergeNames,fillMerge,coachNext,coachSkip,coachSkipAll,coachSync,
   aiSaveKey,aiTest,aiClear,openChat,sendChat,askQ,writeArticle,downloadArticle,showArticle,
   aiModels,ensureModel,aiBench,rankModels,scoreModel,buildBulletin,paintTicker,
-  aiSaveGemini,aiSetProv,aiSetSearch,gCall,gModels,fetchLeagueNews});
+  aiSaveGemini,aiSetProv,aiSetSearch,gCall,gModels,fetchLeagueNews,newChat,aiWarmup});
 </script>
 </body>
 </html>
