@@ -993,15 +993,21 @@ function mapFixtures(raw){
    لأن الخادم ينشرها ناقصة أثناء المباراة وقد تكون خاطئة.
    ============================================================ */
 function refreshFinished(){
+  const now=Date.now();
   S.fixtures.forEach(f=>{
-    if(f.manual){ f.src='يدوية'; f.finished=true; f.preview=null; return; }
+    if(f.manual){ f.src='يدوية'; f.finished=true; f.preview=null; f.live=false; return; }
     const official = f.hs!==null&&f.hs!==undefined&&f.as!==null&&f.as!==undefined;
-    if(official){
-      f.src='الرابطة'; f.finished=true; f.preview=null;
+    const started  = now > new Date(f.kickoff).getTime();
+    const late     = now > new Date(f.kickoff).getTime()+ENDED_MS;
+    /* إشارة انتهاء صريحة مطلوبة — وجود نتيجة وحده لا يكفي،
+       لأن الخادم صار ينشر النتيجة أثناء اللعب. */
+    const ended = f.apiFinished || f.prov || (f.mins>=90) || !!S.liveEnded[f.id] || late;
+    if(official && ended){
+      f.src='الرابطة'; f.finished=true; f.preview=null; f.live=false;
     }else{
-      f.src=null; f.finished=false;
-      const lv=S.liveScores[f.id];
-      f.preview = lv ? {hs:lv.hs, as:lv.as} : null;   // للعرض فقط
+      f.finished=false; f.src=null;
+      f.live = started && !ended;
+      f.preview = official ? {hs:f.hs, as:f.as} : (S.liveScores[f.id]||null);
     }
   });
   if(S.rounds.length)
@@ -1192,7 +1198,7 @@ function paintCore(){
   refreshFinished();
   renderRounds(); renderMatches(); renderRemind();
   $('#roundBadge').textContent=roundName(S.currentRound);
-  const live=S.fixtures.filter(f=>f.started&&!f.finished).length;
+  const live=S.fixtures.filter(f=>f.live).length;
   $('#liveStat').textContent=live?`🔴 ${live} مباراة الآن`:`${S.fixtures.filter(f=>f.finished).length} مباراة منتهية`;
 }
 /* المرحلة الثانية: بقية الأقسام على دفعات فلا تتجمد الشاشة */
@@ -1334,13 +1340,15 @@ function renderMatches(){
     $('#matches').innerHTML=note+`<div class="empty"><span>🏁</span> انتهت كل مباريات هذه الجولة
       <br><small>تجدها في تبويب «المباريات السابقة»</small></div>`;return;}
   $('#matches').innerHTML=list.map(f=>{
-    const live=f.started&&!f.finished, res=outcome(f), mine=myPred(f.id), all=predsOf(f.id);
+    const live=!!f.live, res=outcome(f), mine=myPred(f.id), all=predsOf(f.id);
     let mid;
     if(f.finished) mid=`<div class="score g" style="${hasScore(f)?'':'font-size:.8rem'}">${scoreLine(f)}</div>`+
       `<div class="ko-d">${f.src==='يدوية'?'نتيجة مُدخَلة يدوياً':'من موقع الرابطة'}</div>`;
+    else if(live) mid=`<div class="score">${f.preview?f.preview.hs+' - '+f.preview.as:'0 - 0'}</div>
+      <div class="ko-d" style="color:var(--lose)">النتيجة الآن · المباراة لم تنتهِ</div>`;
     else if(hasEnded(f)) mid=`<div class="score" style="opacity:.75">${f.preview?f.preview.hs+' - '+f.preview.as:'—'}</div>
       <div class="ko-d" style="color:var(--draw)">نتيجة أولية · بانتظار اعتماد الرابطة</div>`;
-    else if(live)  mid=`<div class="score">${f.hs??0} - ${f.as??0}</div>`;
+
     else mid=`<div class="ko">${ksaTime(f.kickoff)}</div><div class="ko-d">${countdown(f.kickoff)}</div>`;
 
     let ai='';
