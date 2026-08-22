@@ -522,6 +522,8 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
       <button class="btn" onclick="adminTab('arch')">📦 الأرشيف</button>
       <button class="btn" onclick="adminTab('edit')">👑 إدارة توقعات اللاعبين</button>
       <button class="btn" onclick="adminTab('res')">🧮 إدخال النتائج يدوياً</button>
+      <button class="btn" onclick="adminTab('delay')">📅 تأجيل مباراة</button>
+      <button class="btn" onclick="adminTab('guard')">🛡️ حارس التناقض</button>
       <button class="btn" onclick="adminTab('stale')">🧹 توقعات مستبدَلة</button>
       <button class="btn" onclick="adminTab('names')">🕵️ كاشف تداخل الأسماء</button>
       <button class="btn" onclick="adminTab('ai')">🤖 كابتن هبد</button>
@@ -602,6 +604,31 @@ tr.rel td.pos{border-right:3px solid var(--lose);color:var(--lose)}
         <button class="btn" onclick="staleCopy()">📋 نسخ المعرّفات</button></div>
       <div class="note" id="staleNote"></div>
       <div class="plist" style="margin-top:10px" id="staleList"></div></div>
+
+    <div class="admin-box" id="ab-delay"><h4>📅 تأجيل مباراة <span class="pill" id="dlCnt">0</span></h4>
+      <p style="font-size:.62rem;color:var(--ink-3);margin-bottom:9px;line-height:1.8">
+        للمباريات التي تُؤجَّل فجأة قبل أن تنشر الرابطة التعديل.
+        التأجيل يعيد فتح التوقع، ويتراجع تلقائياً متى وصل موعد رسمي أحدث.</p>
+      <div class="row">
+        <div class="field"><label>المباراة</label><select id="dlMatch" onchange="dlLoad()"></select></div>
+        <div class="field"><label>الموعد الجديد (اختياري)</label>
+          <input type="datetime-local" id="dlWhen"
+            style="width:100%;padding:9px 14px;border-radius:30px;border:1px solid var(--line);
+            background:var(--surface-2);color:var(--ink);font-size:.75rem;font-family:inherit;outline:none" /></div>
+      </div>
+      <div class="admin-btns">
+        <button class="btn solid" onclick="dlSave()">💾 اعتماد التأجيل</button>
+        <button class="btn" onclick="dlOpen()">🔓 فتح التوقع فوراً</button>
+        <button class="btn danger" id="dlDel" onclick="dlRemove()" style="display:none">↩️ إلغاء التأجيل</button>
+      </div>
+      <div class="note" id="dlNote"></div>
+      <div class="plist" style="margin-top:10px" id="dlList"></div></div>
+
+    <div class="admin-box" id="ab-guard"><h4>🛡️ حارس التناقض <span class="pill" id="gdCnt">0</span></h4>
+      <p style="font-size:.62rem;color:var(--ink-3);margin-bottom:9px;line-height:1.8">
+        فحص تلقائي يرصد ما لا يستقيم في البيانات قبل أن يؤثر على النقاط.</p>
+      <div class="admin-btns"><button class="btn solid" onclick="runGuard()">🔍 افحص الآن</button></div>
+      <div class="plist" style="margin-top:10px" id="gdList"></div></div>
 
     <div class="admin-box" id="ab-res"><h4>🧮 إدخال نتيجة مباراة يدوياً <span class="pill" id="resCnt">0</span></h4>
       <p style="font-size:.62rem;color:var(--ink-3);margin-bottom:9px;line-height:1.8">
@@ -874,7 +901,8 @@ const ICON_USERS=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" str
   <circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>`;
 const ICON_BOLT=`<svg viewBox="0 0 24 24" fill="currentColor"><path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12l1-8.5z"/></svg>`;
 
-const RESULT_USER='#result';   // صف محجوز لتخزين النتائج اليدوية داخل نفس الجدول
+const RESULT_USER='#result';
+const DELAY_USER='#delay';     // صف محجوز لتخزين تأجيلات المباريات   // صف محجوز لتخزين النتائج اليدوية داخل نفس الجدول
 const S={fixtures:[],byRound:{},rounds:[],apiTeams:{},players:[],byPlayer:{},events:[],
   live:{},liveStats:{},liveScores:{},liveEnded:{},currentRound:1,viewRound:1,
   preds:[],results:{},me:'',admin:false,ready:false,starsMode:'g',boardTab:'rank'};
@@ -900,13 +928,16 @@ function enableLogos(){
 }
 const ksaTime=i=>new Date(i).toLocaleTimeString('ar-SA',{hour:'2-digit',minute:'2-digit',hour12:false,timeZone:CFG.TZ});
 const ksaDate=i=>new Date(i).toLocaleDateString('ar-SA',{weekday:'long',day:'numeric',month:'long',timeZone:CFG.TZ});
-const isLocked=i=>Date.now()>(new Date(i).getTime()-CFG.LOCK_MIN*60000);
+const isLocked=(i,f)=>{
+  if(f&&f.forceOpen) return false;              // مباراة مؤجلة أُعيد فتحها إدارياً
+  return Date.now()>(new Date(i).getTime()-CFG.LOCK_MIN*60000);
+};
 /* خادم الرابطة قد لا يرفع علم finished مطلقاً، لكنه قد يكتب النتيجة.
    لذلك نعتمد النتيجة متى وُجدت ومضى على الانطلاق ساعتان ونصف،
    ونعتبر المباراة منتهية زمنياً حتى لو بقيت النتيجة فارغة. */
 const ENDED_MS=135*60000;   // شبكة أمان أخيرة إن لم تصل أي إشارة من المصدر
-const hasEnded=f=>!!f.finished || !!f.prov || (f.mins>=90) || !!S.liveEnded[f.id]
-  || Date.now() > new Date(f.kickoff).getTime()+ENDED_MS;
+const hasEnded=f=>!!f.finished || (!f.forceOpen && (!!f.prov || (f.mins>=90) || !!S.liveEnded[f.id]
+  || Date.now() > new Date(f.kickoff).getTime()+ENDED_MS));
 function countdown(iso){let d=new Date(iso).getTime()-Date.now(); if(d<=0)return 'بدأت';
   const day=Math.floor(d/864e5);d-=day*864e5;const h=Math.floor(d/36e5);d-=h*36e5;const m=Math.floor(d/6e4);
   if(day>0)return `بعد ${day} يوم`; if(h>0)return `بعد ${h}س ${m}د`; return `بعد ${m} دقيقة`;}
@@ -977,6 +1008,7 @@ function mapFixtures(raw){
   S.fixtures=raw.map(f=>({id:f.id,round:f.event,kickoff:f.kickoff_time,
     provisional:!!f.provisional_start_time,home:f.team_h,away:f.team_a,
     hs:f.team_h_score,as:f.team_a_score,started:!!f.started,
+    apiKickoff:f.kickoff_time,
     apiFinished:!!f.finished, prov:!!f.finished_provisional, mins:+f.minutes||0,
     finished:false, stats:f.stats||[]}))
     .sort((a,b)=>new Date(a.kickoff)-new Date(b.kickoff));
@@ -1166,8 +1198,14 @@ async function fetchPreds(){
   const {data,error}=await sb.from('predictions').select('*').limit(5000);
   if(error){console.warn('تعذّر جلب التوقعات',error);S.preds=[];return;}
   const rows=(data||[]).filter(p=>String(p.match_id||'').startsWith(PREFIX));
-  S.preds = rows.filter(p=>p.user_name!==RESULT_USER);
-  S.results={};
+  S.preds = rows.filter(p=>p.user_name!==RESULT_USER && p.user_name!==DELAY_USER);
+  S.results={}; S.delays={};
+  rows.filter(p=>p.user_name===DELAY_USER).forEach(r=>{
+    const v=String(r.prediction||'').trim();
+    const fid=fidOf(r.match_id);
+    if(v==='OPEN') S.delays[fid]={open:true, id:r.id};          // فتح فوري بلا موعد
+    else if(/^\d{4}-\d{2}-\d{2}T/.test(v)) S.delays[fid]={when:v, id:r.id};
+  });
   setTimeout(()=>cacheSet('pr',{p:S.preds,r:S.results}),0);
   rows.filter(p=>p.user_name===RESULT_USER).forEach(r=>{
     const v=String(r.prediction||'').trim();
@@ -1181,6 +1219,17 @@ async function fetchPreds(){
 
 /* تُطبَّق النتائج اليدوية فوق بيانات الـ API */
 function applyManual(){
+  // التأجيلات: موعد جديد أو فتح فوري — ويتراجع تلقائياً متى نشرت الرابطة موعداً أحدث
+  S.fixtures.forEach(f=>{
+    const d=(S.delays||{})[f.id];
+    f.delayed=false; f.forceOpen=false;
+    if(d && !f.finished){
+      if(d.open){ f.forceOpen=true; f.delayed=true; }
+      else if(d.when && new Date(d.when) > new Date(f.apiKickoff||f.kickoff)){
+        f.kickoff=d.when; f.delayed=true;
+      }
+    }
+  });
   S.fixtures.forEach(f=>{
     const r=S.results[f.id];
     if(r){ f.finished=true; f.started=true; f.manual=true; f.manualOutcome=r.win;
@@ -1213,7 +1262,13 @@ function paintRest(){
   };
   (window.requestIdleCallback||window.requestAnimationFrame)(run);
 }
-function __paintTail(){ fillArtRounds(); buildBulletin(); }
+function __paintTail(){
+  fillArtRounds();
+  const saved=localStorage.getItem('splbBulletin');
+  if(saved){ try{ paintTicker(JSON.parse(saved).txt); }catch(e){ paintTicker(''); } }
+  else paintTicker('');            // ملخص حسابي ريثما تجهز نشرة كابتن هبد
+  buildBulletin();
+}
 function paint(){ paintCore(); paintRest(); }
 /* عرض فوري مما هو محفوظ محلياً (إن وُجد) قبل انتظار الشبكة */
 function paintFromCache(){
@@ -1379,7 +1434,7 @@ function renderMatches(){
     let actions;
     if(f.round>S.currentRound){
       actions=`<div class="lockmsg">🔒 سيتاح التوقع لهذه الجولة عند انطلاق مبارياتها لاحقاً</div>`;
-    }else if(f.finished||isLocked(f.kickoff)){
+    }else if(f.finished||isLocked(f.kickoff,f)){
       actions=`<div class="m-foot">${countBtn(f,all.length)}</div>`;
     }else{
       actions=`<div class="m-foot">
@@ -1389,7 +1444,7 @@ function renderMatches(){
           onclick="shareLink(${f.id})" title="نسخ رابط المباراة">🔗</button></div>`;
     }
     return `<article class="match ${live?'live':''}">
-      <div class="m-head"><span>${f.provisional?'موعد مبدئي':ksaDate(f.kickoff)}</span>
+      <div class="m-head"><span>${f.delayed?'📅 مؤجلة · '+ksaDate(f.kickoff):(f.provisional?'موعد مبدئي · '+ksaDate(f.kickoff):ksaDate(f.kickoff))}</span>
         <span class="${live?'m-live':''}">${live?'● تُلعب الآن':(f.finished?'انتهت':roundName(f.round))}</span></div>
       <div class="m-row">
         <div class="side">${crest(f.home)}<span class="side-name">${tName(f.home)}</span></div>
@@ -1787,7 +1842,7 @@ function renderRemind(){
       '<small>توقعاتك لا تُحفظ بدون اسم</small></span>'+
       '<button class="btn solid" onclick="document.getElementById(\'meBtn\').click()">تسجيل الاسم</button>';
     return; }
-  const open=(S.byRound[S.currentRound]||[]).filter(f=>!f.finished&&!isLocked(f.kickoff));
+  const open=(S.byRound[S.currentRound]||[]).filter(f=>!f.finished&&!isLocked(f.kickoff,f));
   const miss=open.filter(f=>!myPred(f.id));
   if(!miss.length){ el.className='remind'; el.innerHTML=''; return; }
   const next=miss.map(f=>new Date(f.kickoff).getTime()).sort((a,b)=>a-b)[0];
@@ -1969,7 +2024,7 @@ function shareLink(fid){
 let bulkPick={};
 function openBulk(){
   if(!S.me){toast('سجّل اسمك أولاً');$('#meBtn').click();return;}
-  const open=(S.byRound[S.currentRound]||[]).filter(f=>!hasEnded(f)&&!isLocked(f.kickoff));
+  const open=(S.byRound[S.currentRound]||[]).filter(f=>!hasEnded(f)&&!isLocked(f.kickoff,f));
   if(!open.length){toast('لا توجد مباريات متاحة للتوقع الآن');return;}
   bulkPick={};
   open.forEach(f=>{const m=myPred(f.id); if(m) bulkPick[f.id]=sideOf(f,m.prediction);});
@@ -2008,7 +2063,7 @@ $('#bulkSave')?.addEventListener('click',async function(){
   let ok=0, fail=0;
   for(const fid of ids){
     const f=fixtureById(fid); if(!f) continue;
-    if(hasEnded(f)||isLocked(f.kickoff)){ fail++; continue; }
+    if(hasEnded(f)||isLocked(f.kickoff,f)){ fail++; continue; }
     try{
       await upsertPred(myPred(fid), {user_name:S.me, match_id:midOf(f),
         prediction:predText(f,bulkPick[fid])});
@@ -2189,7 +2244,7 @@ function renderMe(){
 
   const fx=S.byRound[S.currentRound]||[];
   const rows=fx.map(f=>{
-    const mine=myPred(f.id), res=outcome(f), locked=isLocked(f.kickoff)||f.finished;
+    const mine=myPred(f.id), res=outcome(f), locked=isLocked(f.kickoff,f)||f.finished;
     let right='', cls='';
     if(mine){
       if(res){ const ok=sideOf(f,mine.prediction)===res; cls=ok?'':'';
@@ -3255,13 +3310,37 @@ function bulletinKey(){
   for(let i=0;i<s.length;i++){ hsh=((hsh<<5)-hsh+s.charCodeAt(i))|0; }
   return 'bl'+b.round+'_'+hsh;
 }
+/* ملخص حسابي يظهر فوراً بلا انتظار الذكاء الاصطناعي */
+function fallbackTicker(){
+  const L=[]; const b=scoreboard();
+  if(b.length){
+    L.push(`المتصدر ${b[0].name} برصيد ${b[0].pts} نقطة`);
+    if(b.length>1) L.push(`يليه ${b[1].name} بـ ${b[1].pts} نقطة`);
+    const acc=[...b].sort((x,y)=>y.acc-x.acc)[0];
+    if(acc&&acc.acc) L.push(`أدق متسابق ${acc.name} بنسبة ${acc.acc} بالمئة`);
+    const st=[...b].sort((x,y)=>(y.streak||0)-(x.streak||0))[0];
+    if(st&&st.streak) L.push(`أطول سلسلة صحيحة ${st.name} بـ ${st.streak} توقعاً`);
+  }
+  const done=S.fixtures.filter(f=>outcome(f)).slice(-5);
+  done.forEach(f=>L.push(`${tName(f.home)} ${f.hs}-${f.as} ${tName(f.away)}`));
+  const sc=S.players.filter(p=>p.goals>0).sort((a,b2)=>b2.goals-a.goals).slice(0,3);
+  if(sc.length) L.push('صدارة الهدافين '+sc.map(p=>`${playerAr(p.name,p.team)} ${p.goals}`).join(' و'));
+  const risk=S.players.map(p=>({p,c:cardStatus(p)})).filter(x=>x.c.risk).slice(0,3);
+  if(risk.length) L.push('مهددون بالإيقاف '+risk.map(x=>playerAr(x.p.name,x.p.team)).join(' و'));
+  const nx=S.fixtures.filter(f=>!hasEnded(f)).slice(0,3);
+  nx.forEach(f=>L.push(`قادم ${tName(f.home)} ضد ${tName(f.away)} ${ksaTime(f.kickoff)}`));
+  return L.join('\n');
+}
 function paintTicker(txt){
   const t=$('#ticker'), m=$('#tickerMove');
   if(!t||!m) return;
-  if(!txt){ t.classList.remove('on'); return; }
-  const parts=txt.split(/\s*[•|]\s*|\n+/).map(s=>s.trim())
-    .filter(s=>s && s.length>8 && !/^لا جديد/.test(s));
+  let src=txt;
+  const clean=s=>String(s||'').split(/\s*[•|]\s*|\n+/).map(x=>x.trim())
+    .filter(x=>x && x.length>8 && !/^لا جديد/.test(x));
+  let parts=clean(src);
+  if(!parts.length){ src=fallbackTicker(); parts=clean(src); }   // لا يختفي الشريط أبداً
   if(!parts.length){ t.classList.remove('on'); return; }
+  txt=parts.join('\n');
   // نكرر المحتوى مرتين ليبدو التمرير متصلاً بلا فراغ بين الدورات
   const one=parts.map(p=>`<span>${p}</span>`).join('<span class="sep">◆</span>')
     +'<span class="sep">◆</span>';
@@ -3292,10 +3371,26 @@ async function buildBulletin(force){
 اكتب من عشرين إلى ثلاثين جملة مستقلة، كل جملة في سطر منفصل.
 الشريط يمرّ طويلاً أمام القارئ، فكلما زادت الجمل المفيدة كان أفضل — لكن بلا حشو ولا تكرار معنى.
 
-إن وصلتك أخبار حديثة من الإنترنت فاجعلها الثلث الأول من النشرة وميّزها بأنها مستجدات،
-وغطِّ منها ما يخص كأس الملك والسوبر وأبطال آسيا إن وُجد، ثم انتقل لأرقام التطبيق.
+رتّب النشرة على أقسام واضحة بهذا التسلسل:
 
-غطِّ بهذا الترتيب تقريباً مع حرية في التنويع:
+أولاً — المتسابقون (خمس إلى سبع جمل، وهو أهم قسم):
+من تصدّر وبكم، من صعد ومن نزل هذه الجولة، الفارق بين الأول والثاني وبين الأول والأخير،
+أدق متسابق ونسبته، أطول سلسلة صحيحة، أجرأ توقع أصاب ضد الأغلبية، من فوّت توقعات.
+
+ثانياً — نتائج المباريات (ثلاث إلى خمس جمل): أبرز النتائج وأغربها وما غيّرته في الترتيب.
+
+ثالثاً — الأهداف وصنّاع اللعب (جملتان إلى أربع): هدافو الجولة، صدارة الهدافين، أبرز صانع.
+
+رابعاً — البطاقات والإيقافات (جملتان إلى أربع): الإنذارات، من بلغ ثلاثة، الموقوفون عن الجولة القادمة.
+
+خامساً — الغيابات والإصابات (جملة أو جملتان).
+
+سادساً — ما ينتظرنا (جملتان): أبرز مباريات الجولة القادمة.
+
+إن وصلتك أخبار حديثة من الإنترنت فأدرجها بعد قسم المتسابقين مباشرة وميّزها بأنها مستجدات،
+وغطِّ منها ما يخص كأس الملك والسوبر وأبطال آسيا إن وُجد.
+
+ملاحظات على التغطية:
 أبرز نتائج الجولة بأرقامها · هدافو الجولة وصدارة الهدافين · أكثر صنّاع اللعب ·
 الموقوفون ومن بقي له إنذار واحد · الغيابات المؤثرة · صدارة الترتيب وما تغيّر فيها ·
 تحليل أداء المتسابقين في التوقعات: من تصدّر، من الأدق، من الأجرأ، من صاحب أطول سلسلة،
@@ -3571,7 +3666,7 @@ function openPick(fid){
   if(!S.me){toast('سجّل اسمك أولاً');$('#meBtn').click();return;}
   const f=fixtureById(fid); if(!f)return;
   if(f.round>S.currentRound){toast('سيتاح التوقع لهذه الجولة عند انطلاق مبارياتها لاحقاً');return;}
-  if(isLocked(f.kickoff)){toast('أُقفل التوقع — بقي أقل من 5 دقائق على الصافرة');return;}
+  if(isLocked(f.kickoff,f)){toast('أُقفل التوقع — بقي أقل من 5 دقائق على الصافرة');return;}
   pickFid=fid;
   $('#pickTitle').textContent=`${tName(f.home)} × ${tName(f.away)}`;
   $('#pickWhen').textContent=`${ksaDate(f.kickoff)} · ${ksaTime(f.kickoff)} بتوقيت السعودية`;
@@ -3589,7 +3684,7 @@ $('#pickSave').onclick=async function(){
   if(!sel){note.className='note err';note.textContent='اختر نتيجة';return;}
   const f=fixtureById(pickFid);
   if(f.round>S.currentRound){note.className='note err';note.textContent='الجولة غير مفتوحة بعد';return;}
-  if(isLocked(f.kickoff)){note.className='note err';note.textContent='أُقفل التوقع لهذه المباراة';return;}
+  if(isLocked(f.kickoff,f)){note.className='note err';note.textContent='أُقفل التوقع لهذه المباراة';return;}
   if(!sb){note.className='note err';note.textContent='لا اتصال بقاعدة البيانات';return;}
   this.disabled=true;note.className='note info';note.textContent='جارٍ الحفظ…';
   const mine=myPred(pickFid),value=predText(f,sel.value),mid=midOf(f);
@@ -3683,8 +3778,14 @@ function openPlayer(name){
 }
 
 /* الإدارة */
+/* الدخول للوحة الإدارة: ثلاث ضغطات متتالية خلال ثانيتين، ثم الرمز */
+let footTaps=0, footTimer=null;
 $('#foot').onclick=()=>{
   if(S.admin){$('#adminPanel').classList.toggle('on');return;}
+  footTaps++; clearTimeout(footTimer);
+  footTimer=setTimeout(()=>{footTaps=0;},2000);
+  if(footTaps<3) return;
+  footTaps=0; clearTimeout(footTimer);
   $('#pwIn').value='';$('#pwNote').textContent='';show('#vAdmin');
   setTimeout(()=>$('#pwIn').focus(),250);};
 $('#pwGo').onclick=()=>{
@@ -3767,7 +3868,7 @@ function refreshAdmin(){
     :`<div class="empty" style="padding:20px"><span>✅</span> لا تداخل في الأسماء</div>`;
   fillMerge();
 
-  fillPlayers(); fillMatches(); fillResMatches();
+  fillPlayers(); fillMatches(); fillResMatches(); fillDelay(); runGuard();
 }
 function fillPlayers(){
   const q=($('#aSearch').value||'').trim();
@@ -3913,6 +4014,122 @@ function staleRows(){
     .sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
 }
 
+/* --- تأجيل المباريات --- */
+function fillDelay(){
+  const sel=$('#dlMatch'); if(!sel) return;
+  const cur=sel.value;
+  const list=S.fixtures.filter(f=>!f.finished);
+  sel.innerHTML=list.map(f=>
+    `<option value="${f.id}">ج${f.round} · ${tName(f.home)} × ${tName(f.away)} — ${ksaDate(f.kickoff)} ${ksaTime(f.kickoff)}${f.delayed?' 📅':''}</option>`).join('')
+    ||'<option value="">لا مباريات قادمة</option>';
+  if(cur) sel.value=cur;
+  const d=S.delays||{};
+  const n=Object.keys(d).length;
+  $('#dlCnt').textContent=n;
+  $('#dlList').innerHTML=n?Object.keys(d).map(Number).map(fid=>{
+    const f=fixtureById(fid); if(!f) return '';
+    const x=d[fid];
+    return `<div class="pitem"><span class="who">ج${f.round} ${tName(f.home)} × ${tName(f.away)}</span>
+      <span style="color:var(--ink-2);font-size:.62rem">${x.open?'فُتح التوقع فوراً':ksaDate(x.when)+' '+ksaTime(x.when)}</span>
+      <span class="tag hid">مؤجلة</span></div>`;}).join('')
+    :`<div class="empty" style="padding:18px"><span>📅</span> لا تأجيلات</div>`;
+  dlLoad();
+}
+function dlLoad(){
+  const f=fixtureById(+$('#dlMatch').value), n=$('#dlNote'); if(!f) return;
+  const d=(S.delays||{})[f.id];
+  $('#dlDel').style.display=d?'inline-flex':'none';
+  if(d&&d.when){
+    const dt=new Date(d.when);
+    $('#dlWhen').value=new Date(dt.getTime()-dt.getTimezoneOffset()*6e4).toISOString().slice(0,16);
+    n.className='note info'; n.textContent='مؤجلة إلى '+ksaDate(d.when)+' '+ksaTime(d.when);
+  }else if(d&&d.open){
+    n.className='note info'; n.textContent='التوقع مفتوح إدارياً بلا موعد محدد';
+  }else{
+    const k=new Date(f.kickoff);
+    $('#dlWhen').value=new Date(k.getTime()-k.getTimezoneOffset()*6e4).toISOString().slice(0,16);
+    n.className='note'; n.textContent='الموعد الحالي: '+ksaDate(f.kickoff)+' '+ksaTime(f.kickoff);
+  }
+}
+async function dlWrite(f, value){
+  const ex=(S.delays||{})[f.id];
+  await upsertPred(ex?{id:ex.id}:null,
+    {user_name:DELAY_USER, match_id:midOf(f), prediction:value});
+  await fetchPreds(); applyManual(); paintCore(); paintRest(); refreshAdmin();
+}
+async function dlSave(){
+  const f=fixtureById(+$('#dlMatch').value), n=$('#dlNote');
+  if(!f){ n.className='note err'; n.textContent='اختر مباراة'; return; }
+  const v=$('#dlWhen').value;
+  if(!v){ n.className='note err'; n.textContent='حدّد الموعد الجديد أو استخدم «فتح التوقع فوراً»'; return; }
+  const iso=new Date(v).toISOString();
+  n.className='note info'; n.textContent='جارٍ الحفظ…';
+  try{ await dlWrite(f, iso);
+    n.className='note ok'; n.textContent='أُجّلت إلى '+ksaDate(iso)+' '+ksaTime(iso)+' وأُعيد فتح التوقع';
+  }catch(e){ n.className='note err'; n.textContent='فشل: '+(e.message||'خطأ'); }
+}
+async function dlOpen(){
+  const f=fixtureById(+$('#dlMatch').value), n=$('#dlNote');
+  if(!f){ n.className='note err'; n.textContent='اختر مباراة'; return; }
+  n.className='note info'; n.textContent='جارٍ الفتح…';
+  try{ await dlWrite(f,'OPEN');
+    n.className='note ok'; n.textContent='فُتح التوقع لهذه المباراة';
+  }catch(e){ n.className='note err'; n.textContent='فشل: '+(e.message||'خطأ'); }
+}
+async function dlRemove(){
+  const f=fixtureById(+$('#dlMatch').value), n=$('#dlNote');
+  const d=(S.delays||{})[f.id];
+  if(!d){ n.className='note err'; n.textContent='لا تأجيل لهذه المباراة'; return; }
+  try{
+    const {error}=await sb.from('predictions').delete().eq('id',d.id);
+    if(error) throw error;
+    await fetchPreds(); applyManual(); paintCore(); paintRest(); refreshAdmin();
+    n.className='note ok'; n.textContent='أُلغي التأجيل وعاد الموعد الرسمي';
+  }catch(e){ n.className='note err'; n.textContent='فشل الحذف: '+(e.message||'خطأ'); }
+}
+
+/* --- حارس التناقض --- */
+function guardCheck(){
+  const out=[], now=Date.now();
+  S.fixtures.forEach(f=>{
+    const ko=new Date(f.kickoff).getTime();
+    const res=outcome(f);
+    if(res && hasScore(f)){
+      const ev=matchEvents(f).filter(e=>e.name);
+      const g=ev.filter(e=>e.id==='goals_scored'||e.id==='own_goals').reduce((s,e)=>s+e.v,0);
+      const tot=f.hs+f.as;
+      if(tot>0 && ev.length && g<tot)
+        out.push({lvl:'warn',t:`${tName(f.home)} × ${tName(f.away)}`,m:`النتيجة ${f.hs}-${f.as} لكن المرصود ${g} هدفاً فقط`});
+      if(tot>0 && !ev.length)
+        out.push({lvl:'info',t:`${tName(f.home)} × ${tName(f.away)}`,m:'نتيجة بلا أي أحداث مرصودة'});
+    }
+    if(!f.finished && now>ko+5*36e5 && !f.delayed)
+      out.push({lvl:'bad',t:`${tName(f.home)} × ${tName(f.away)}`,m:'مضى على موعدها أكثر من خمس ساعات بلا نتيجة — قد تكون مؤجلة'});
+    if(f.finished && now<ko)
+      out.push({lvl:'bad',t:`${tName(f.home)} × ${tName(f.away)}`,m:'مسجّلة كمنتهية وموعدها لم يحن بعد'});
+    if(f.live && now>ko+4*36e5)
+      out.push({lvl:'bad',t:`${tName(f.home)} × ${tName(f.away)}`,m:'معروضة كأنها تُلعب الآن منذ أكثر من أربع ساعات'});
+  });
+  // توقعات على مباريات غير موجودة
+  const orphan=latest(S.preds).filter(p=>!fixtureById(fidOf(p.match_id)));
+  if(orphan.length) out.push({lvl:'warn',t:'توقعات يتيمة',m:`${orphan.length} توقعاً على مباريات غير موجودة`});
+  // متسابقون بتوقعات أكثر من عدد المباريات
+  const maxF=S.fixtures.length;
+  scoreboard().forEach(u=>{ if(u.total>maxF)
+    out.push({lvl:'warn',t:u.name,m:`عدد توقعاته ${u.total} يتجاوز عدد المباريات`}); });
+  return out;
+}
+function runGuard(){
+  const g=guardCheck();
+  $('#gdCnt').textContent=g.length;
+  $('#gdList').innerHTML=g.length?g.map(x=>`<div class="pitem ${x.lvl==='bad'?'wrong':''}">
+      <span class="who">${x.t}</span>
+      <span style="flex:2;min-width:150px;font-size:.62rem;color:var(--ink-2)">${x.m}</span>
+      <span class="tag ${x.lvl==='bad'?'no':(x.lvl==='warn'?'wait':'hid')}">
+        ${x.lvl==='bad'?'خلل':(x.lvl==='warn'?'تنبيه':'ملاحظة')}</span></div>`).join('')
+    :`<div class="empty" style="padding:20px"><span>✅</span> لا تناقضات — البيانات سليمة</div>`;
+}
+
 /* --- النتائج اليدوية --- */
 function fillResMatches(){
   const cur=$('#rMatch').value;
@@ -4052,7 +4269,12 @@ starsMode('g');
 loadAll();
 setInterval(()=>{if(S.ready){refreshFinished();renderMatches();renderRemind();renderPrev();}},30000);
 /* تُحدَّث النشرة كل ساعتين تلقائياً فلا يبقى الشريط على خبر قديم */
-setInterval(()=>{ if(S.ready && (G.keys.length||AI.key)) buildBulletin(true); }, 2*36e5);
+setInterval(()=>{ if(S.ready && (G.keys.length||AI.key)) buildBulletin(true); }, 90*60000);
+/* حارس: إن اختفى الشريط لأي سبب نعيده بالملخص الحسابي */
+setInterval(()=>{
+  const t=$('#ticker');
+  if(S.ready && t && !t.classList.contains('on')) paintTicker('');
+}, 20000);
 /* أثناء يوم المباريات نتحقق كل دقيقتين، وفي غيره كل خمس دقائق */
 setInterval(()=>{
   if(!S.ready) return;
@@ -4065,7 +4287,8 @@ setInterval(()=>{
 
 Object.assign(window,{openPick,openMatch,openPlayer,loadAll,retryBootstrap,hide,starsMode,boardTab,
   renderCompare,adminTab,adminSave,adminDelete,adminLoadPred,fillPlayers,lockAdmin,toggleTheme,
-  resLoad,resSave,resDelete,staleDeleteAll,staleCopy,goPick,shareCard,exportCSV,renderMe,paint,toggleOld,
+  resLoad,resSave,resDelete,dlLoad,dlSave,dlOpen,dlRemove,fillDelay,runGuard,guardCheck,
+  staleDeleteAll,staleCopy,goPick,shareCard,exportCSV,renderMe,paint,toggleOld,
   renderNews,renderSearch,renderCards,openClubCards,openBulk,setBulk,shareLink,syncLive,fetchLive,mpTab,
   checkName,useName,normName,mergeNames,fillMerge,coachNext,coachSkip,coachSkipAll,coachSync,
   aiSaveKey,aiTest,aiClear,openChat,sendChat,askQ,writeArticle,downloadArticle,showArticle,
